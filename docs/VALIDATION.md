@@ -108,3 +108,14 @@ The toolbar buttons were replaced with a native WPF menu above the application b
 - VERSION remains 0.1.4; the fixed development output was updated without formal release packaging.
 
 Evidence: `artifacts/menu-build-results.txt` and `artifacts/menu-preview.png`.
+
+## Process-list context menu
+
+Right-clicking a process row selects it and opens an Add Monitor action. The action resolves the target from the context menu's owning row and uses the existing session startup flow. Its availability follows the same identity, busy-state and concurrency rules as the main Add Monitor button. Empty list space has no process menu.
+
+- Final daily build: zero warnings/errors, **60 core checks** and **23 bound WPF checks** passed.
+- An isolated WPF probe passed **4 context-menu checks**: a routed right click selects the clicked row; the menu opens with its action enabled; clicking uses the owning row even if selection changes and reuses that row's existing session; self-monitoring is disabled. The probe used sample sessions and did not start a collector or request elevation.
+- The program running from the default development directory was preserved. Updated self-contained executables were published to the fixed alternate development directory `artifacts/dev-alternate/ProcessSentinel-win-x64/`.
+- VERSION remains 0.1.4, and no formal release package was generated.
+
+Evidence: `artifacts/context-menu-build-results.txt` and `artifacts/context-menu-probe-results.txt`. No new ETW capture validation was performed for this UI entry point.

@@ -73,7 +73,7 @@ public partial class MainWindow : Window
     }
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
-        if (ProcessList.SelectedItem is ProcessInfo process) await BeginAsync(process, null);
+        if (ProcessList.SelectedItem is ProcessInfo process && CanAddMonitor(process)) await BeginAsync(process, null);
     }
     private async void Launch_Click(object sender, RoutedEventArgs e)
     {
@@ -165,8 +165,7 @@ public partial class MainWindow : Window
     {
         bool available = !starting && !stopping && !closing;
         bool capacity = sessions.Count(x => x.Client.Running) < MaximumConcurrentSessions;
-        StartButton.IsEnabled = available && ProcessList.SelectedItem is ProcessInfo { Id: > 0, StartTimeUtcTicks: > 0 } info
-            && info.Id != Environment.ProcessId && (capacity || FindRunningSession(info, IncludeChildren.IsChecked == true) is not null);
+        StartButton.IsEnabled = ProcessList.SelectedItem is ProcessInfo info && CanAddMonitor(info);
         LaunchButton.IsEnabled = available && capacity;
         StopButton.IsEnabled = !stopping && !closing && (starting || busy);
         StopButton.Content = starting ? "取消启动" : "停止当前";
