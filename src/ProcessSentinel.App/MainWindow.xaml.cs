@@ -120,7 +120,7 @@ public partial class MainWindow : Window
             }
             if (sessions.Count(x => x.Client.Running) >= MaximumConcurrentSessions)
                 throw new InvalidOperationException($"最多同时监控 {MaximumConcurrentSessions} 个程序，请先停止一个会话。");
-            session = new MonitorSession(request, family?.Boundary ?? "");
+            session = new MonitorSession(request, family?.Boundary ?? "", settings.EffectiveLogDirectory);
             startupSession = session;
             session.UpdateLabel();
             sessions.Add(session);
@@ -280,9 +280,14 @@ public partial class MainWindow : Window
     }
     private void OpenLogs_Click(object sender, RoutedEventArgs e)
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProcessSentinel", "Sessions");
-        Directory.CreateDirectory(directory);
-        Process.Start(new ProcessStartInfo("explorer.exe", "\"" + directory + "\"") { UseShellExecute = true });
+        try
+        {
+            var directory = !string.IsNullOrEmpty(client?.JournalPath)
+                ? Path.GetDirectoryName(client.JournalPath)! : settings.EffectiveLogDirectory;
+            Directory.CreateDirectory(directory);
+            Process.Start(new ProcessStartInfo("explorer.exe", "\"" + directory + "\"") { UseShellExecute = true });
+        }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开日志目录", MessageBoxButton.OK, MessageBoxImage.Information); }
     }
     private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
         "1. 选择任意进程后点击“添加监控”，默认自动监控所属程序的完整进程树，最多同时监控 4 个程序。\n2. 选中子进程也会纳入相关父进程、兄弟及全部子孙进程；向上追溯止于 Explorer、终端和系统公共宿主。\n3. 标题显示程序主进程，范围说明保留原始所选 PID；进程名单区分主进程、父进程和所选进程。同程序成员复用已有会话。\n4. 取消勾选自动程序树后仅监控所选 PID；选项只应用于新会话。选择 .exe 启动时，以新进程为根跟踪后代。\n5. 每个程序独立请求采集器权限、保存日志；新启动的目标使用界面当前权限。顶部切换查看时，其他程序持续监控。\n6. “停止当前”停止选中会话，“全部停止”停止所有会话，已运行的目标继续运行。已停止会话可导出或移除视图，磁盘日志保留。\n\n父链已退出、身份无法读取或 PID 复用时，在可确认位置停止追溯；范围提示可查看原因，不按名字合并所有同名程序。\n\n覆盖：文件操作、TCP/UDP 端点与传输字节、注册表、子进程、模块加载。\n限制：只记录监控开始后的事件；无法保证观察所有行为，不读取 HTTPS 内容、文件内容或注册表值，不检测内存注入。文件操作默认是请求，不能视为已成功。\n\n“需复核 / 高关注”表示行为线索，不能直接认定恶意；没有提示也不能证明安全。ETW 或队列丢失会明确显示。\n\nUAC 需要使用同一个 Windows 用户；换用其他管理员账户无法连接采集器。多个程序的子进程范围重叠时，同一事件可能分别记录到各自日志。",

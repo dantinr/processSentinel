@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace ProcessSentinel.App;
 
@@ -7,6 +8,8 @@ internal sealed record AppSettings
 {
     public bool IncludeProgramTree { get; init; } = true;
     public bool RiskOnly { get; init; }
+    public string LogDirectory { get; init; } = "";
+    [JsonIgnore] public string EffectiveLogDirectory => SessionLogs.ResolveDirectory(LogDirectory);
 
     internal static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProcessSentinel", "settings.json");
@@ -16,11 +19,13 @@ internal sealed record AppSettings
         error = null;
         try
         {
-            return File.Exists(FilePath)
+            var settings = File.Exists(FilePath)
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath)) ?? new()
                 : new();
+            _ = settings.EffectiveLogDirectory;
+            return settings;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException)
         {
             error = "无法读取本地设置，已使用默认设置：" + ex.Message;
             return new();

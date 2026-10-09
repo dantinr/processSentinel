@@ -51,7 +51,7 @@ public partial class MainWindow
         if (dialog.ShowDialog() != true) return;
         settings = dialog.Settings;
         ApplySettings(settings);
-        StatusText.Text = "设置已保存 · 监控范围用于新会话，风险筛选已更新";
+        StatusText.Text = "设置已保存 · 新会话日志目录：" + settings.EffectiveLogDirectory + " · 风险筛选已更新";
     }
 
     private void About_Click(object sender, RoutedEventArgs e) => new AboutWindow { Owner = this }.ShowDialog();

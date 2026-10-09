@@ -18,6 +18,14 @@
         <TextBlock Text="行为记录" FontWeight="SemiBold" Margin="0,0,0,12"/>
         <CheckBox x:Name="RiskOnlyOption" Content="默认只看风险提示"/>
         <TextBlock Text="保存后同步切换当前筛选，仅显示“需复核”和“高关注”记录。全部事件仍会采集并保存到日志。" Style="{StaticResource Caption}" TextWrapping="Wrap" LineHeight="20" Margin="0,8,0,0"/>
+        <Border Height="1" Background="{StaticResource Line}" Margin="0,16"/>
+        <TextBlock Text="日志目录" FontWeight="SemiBold" Margin="0,0,0,10"/>
+        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBox x:Name="LogDirectoryText" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+          <Button Grid.Column="1" Content="浏览…" Margin="10,0,0,0" Click="BrowseLogs_Click"/>
+        </Grid>
+        <Button Content="恢复默认目录" HorizontalAlignment="Left" Padding="0,5" BorderBrush="Transparent" Foreground="{StaticResource Accent}" Margin="0,6,0,0" Click="ResetLogs_Click"/>
+        <TextBlock Text="新会话保存到此目录；已有会话继续写入原位置，历史日志保留原位置。保存前会检查目录是否可写。" Style="{StaticResource Caption}" TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0"/>
       </StackPanel>
     </Border>
     <TextBlock Grid.Row="2" Text="主窗口中的勾选可临时调整；在这里保存才会更新默认设置。" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,14,0,18"/>

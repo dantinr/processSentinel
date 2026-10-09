@@ -119,3 +119,14 @@ Right-clicking a process row selects it and opens an Add Monitor action. The act
 - VERSION remains 0.1.4, and no formal release package was generated.
 
 Evidence: `artifacts/context-menu-build-results.txt` and `artifacts/context-menu-probe-results.txt`. No new ETW capture validation was performed for this UI entry point.
+
+## Configurable session log directory
+
+Settings now provides a log directory field, folder picker and reset-to-default action. Saving normalizes an absolute path and verifies ordinary-user write access using a temporary file that deletes on close. New sessions capture the configured directory in their client; existing sessions keep their original journal path. Open Logs follows the selected session's actual journal directory, falling back to the configured directory when there is no session journal. Journal creation errors occur before collector elevation and do not silently switch directories.
+
+- Final daily build and fixed development publish: zero warnings/errors, **60 core checks** and **23 bound WPF checks** passed.
+- **8 isolated log-directory checks passed**: old settings retain the original default; a custom directory survives settings JSON reload; changed settings affect new clients without changing existing clients; Unicode/space paths are writable without leftover probe files; actual journal initialization creates the session header in the configured directory; live journals remain readable/exportable; a file used as a directory rejects initialization without a false journal path or fallback; relative directories are rejected.
+- The updated settings window was rendered and visually inspected; directory field, browse/reset actions, explanatory text and save/cancel buttons are visible.
+- VERSION remains 0.1.4. Updated executables are in `artifacts/dev/ProcessSentinel-win-x64/`; the running alternate development app was preserved. No formal release package was created.
+
+Evidence: `artifacts/log-directory-build-results.txt`, `artifacts/log-directory-probe-results.txt` and `artifacts/log-directory-settings-preview.png`. The isolated probe writes only its own diagnostic files, does not change user settings and does not start an elevated collector. This validates journal storage and UI layout without renewed ETW capture coverage.

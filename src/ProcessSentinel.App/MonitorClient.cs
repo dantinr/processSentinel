@@ -10,6 +10,8 @@ namespace ProcessSentinel.App;
 
 public sealed class MonitorClient : IAsyncDisposable
 {
+    public MonitorClient(string? logDirectory = null) => JournalDirectory = SessionLogs.ResolveDirectory(logDirectory);
+
     private readonly CancellationTokenSource lifetime = new();
     private NamedPipeServerStream? pipe;
     private StreamWriter? commands;
@@ -24,6 +26,7 @@ public sealed class MonitorClient : IAsyncDisposable
     private IReadOnlyList<TrackedProcess> processes = Array.Empty<TrackedProcess>();
     private volatile bool running;
     public string JournalPath { get; private set; } = "";
+    public string JournalDirectory { get; }
     public string Error { get; private set; } = "";
     public bool Running => running;
     public long Total => Interlocked.Read(ref total);
@@ -42,10 +45,8 @@ public sealed class MonitorClient : IAsyncDisposable
         var collectorPath = Path.Combine(AppContext.BaseDirectory, "ProcessSentinel.Collector.exe");
         if (!File.Exists(collectorPath)) throw new FileNotFoundException("缺少采集器，请保留发布目录中的所有文件。", collectorPath);
         var id = Guid.NewGuid().ToString("N");
+        CreateJournal(request, id);
         pipe = LocalPipe.CreateServer("ProcessSentinel-" + id);
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProcessSentinel", "Sessions");
-        JournalPath = Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{request.Root.Id}-{id[..8]}.jsonl");
-        journal = new(JournalPath, request);
         // UAC is limited to the collector. Targets launched by the UI retain the UI's ordinary token.
         using var collector = Process.Start(new ProcessStartInfo(collectorPath, $"--pipe {id} --parent {Environment.ProcessId}") { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden })
             ?? throw new InvalidOperationException("无法启动管理员采集器。");
@@ -58,6 +59,13 @@ public sealed class MonitorClient : IAsyncDisposable
         running = true;
         receive = Task.Run(ReceiveAsync);
         await ready.Task.WaitAsync(startup.Token);
+    }
+
+    private void CreateJournal(MonitorRequest request, string id)
+    {
+        string path = Path.Combine(JournalDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{request.Root.Id}-{id[..8]}.jsonl");
+        journal = new(path, request);
+        JournalPath = path;
     }
 
     private async Task ReceiveAsync()

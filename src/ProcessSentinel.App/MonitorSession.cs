@@ -5,7 +5,7 @@ using Activity = ProcessSentinel.Core.Activity;
 
 namespace ProcessSentinel.App;
 
-internal sealed class MonitorSession(MonitorRequest request, string boundary = "") : INotifyPropertyChanged
+internal sealed class MonitorSession(MonitorRequest request, string boundary = "", string? logDirectory = null) : INotifyPropertyChanged
 {
     public MonitorSession(ProcessInfo root, bool includeChildren) : this(new(root, includeChildren)) { }
     public MonitorRequest Request { get; } = request;
@@ -14,7 +14,7 @@ internal sealed class MonitorSession(MonitorRequest request, string boundary = "
     public bool IncludeChildren => Request.IncludeChildren;
     public string Boundary { get; } = boundary;
     public string ScopeText => IncludeChildren ? $"所选：{Selected.Label} · 范围：主进程及全部子孙进程" : $"仅监控所选进程：{Selected.Label}";
-    public MonitorClient Client { get; } = new();
+    public MonitorClient Client { get; } = new(logDirectory);
     public Stopwatch Duration { get; } = new();
     public Queue<Activity> Recent { get; } = new();
     public bool Starting { get; set; } = true;
