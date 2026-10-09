@@ -77,3 +77,14 @@ The UI and journal retain both the effective root and original selection. Proces
 The self-contained live family recheck was attempted twice, but administrator elevation was canceled before the collector started. The second attempt records Windows error 1223 as `已取消管理员授权。`; only a session header was created, so these attempts do not establish packaged ETW capture. Startup errors now remain visible in the session state rather than being replaced by a generic stopped status. The successful development capture and final packaged UI checks are reported separately.
 
 Evidence: `artifacts/family-core-results.txt`, `artifacts/family-live-results.txt`, `artifacts/family-multiple-results.txt`, `artifacts/family-packaged-ui-results.txt`, `artifacts/family-packaged-results.txt`, `artifacts/family-packaged-final-results.txt`, and `artifacts/family-preview.png`. The 0.1.4 portable directory and ZIP preserve the existing versions and remain excluded from Git. IPv6 and sustained-load limitations from prior validation still apply.
+
+## Development and release build workflow
+
+The root `VERSION` file is the version source for MSBuild and the build script. Normal builds update the fixed `artifacts/dev/ProcessSentinel-win-x64/` directory; only explicit `-Package` builds create a versioned release directory and ZIP. The version remains 0.1.4 for this workflow change.
+
+- `build.ps1 -NoRestore` completed successfully: zero build warnings/errors, **60 core checks** and **23 bound WPF checks** passed, and all three self-contained executables were published to the fixed development directory.
+- The development executable reports product version `0.1.4` (with Git metadata), matching the copied `VERSION` file and the evaluated MSBuild `Version` property.
+- Compared all existing release files by path, size and modification time before and after the daily build: no changes. The development directory contains no ZIP.
+- Default and `-Package -WhatIf` invocations resolve the respective fixed development and versioned release paths without building or generating artifacts. No formal package was created for this change.
+
+Evidence: `artifacts/build-workflow-results.txt` and `artifacts/build-workflow-releases-before.txt`. This validation covers build output and version propagation; no new elevated ETW test was run for the build-script changes.

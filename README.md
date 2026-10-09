@@ -2,11 +2,13 @@
 
 Windows 程序行为监控工具，第一版使用 .NET 10 / WPF 和 Windows ETW。选择已运行的进程，或选择 `.exe` 从启动阶段开始监控，查看文件、网络、注册表、子进程和模块加载记录。
 
-当前版本 **0.1.4**：选中任意进程后，默认向上识别所属程序的主进程，监控其相关父进程、兄弟及全部子孙进程。向上追溯止于 Explorer、终端和系统公共宿主；同一程序中的不同成员复用一个监控会话。界面标明原始所选进程与实际范围，进程名单区分所选、主进程和中间父进程。仍支持一个窗口同时监控 **4 个程序**，独立采集、计数、保存日志及单独/全部停止。
+版本号统一维护在仓库根目录的 `VERSION` 文件中，构建时自动写入程序集和程序版本，界面标题及日志使用该版本。日常功能修改不自动递增版本号，正式发布前按需修改 `VERSION`。
+
+选中任意进程后，默认向上识别所属程序的主进程，监控其相关父进程、兄弟及全部子孙进程。向上追溯止于 Explorer、终端和系统公共宿主；同一程序中的不同成员复用一个监控会话。界面标明原始所选进程与实际范围，进程名单区分所选、主进程和中间父进程。支持一个窗口同时监控 **4 个程序**，独立采集、计数、保存日志及单独/全部停止。
 
 ## 运行
 
-最新便携版位于 `Releases/ProcessSentinel-0.1.4-win-x64/`，默认构建目录为 `Releases/ProcessSentinel-win-x64/`。双击 `ProcessSentinel.exe`，无需安装 .NET，也无需安装驱动。请保留同目录中的全部文件。
+日常构建的可运行程序位于固定目录 `artifacts/dev/ProcessSentinel-win-x64/`。正式发布目录为 `Releases/ProcessSentinel-<VERSION>-win-x64/`，同级保存对应 ZIP。双击 `ProcessSentinel.exe`，无需安装 .NET，也无需安装驱动。请保留同目录中的全部文件。
 
 1. 从左侧选择进程，可按名称、PID、路径搜索。
 2. 保持默认勾选“自动监控所属程序的完整进程树”，点击“添加监控”，允许 Windows UAC 提升采集器的权限。选中子进程时自动纳入其程序主进程及其他分支；已被监控的同程序成员会复用现有会话。继续选择其他程序并添加，无需停止之前的监控。
@@ -79,18 +81,28 @@ ETW 有时只提供相对注册表键名，或不能及时解析已存在的文�
 .\build.ps1
 ```
 
-若旧发布目录中的程序正在运行，可输出到另一目录而不中断现有会话：
+此脚本构建、运行非管理员基础和 WPF 界面检查，然后更新固定开发目录 `artifacts/dev/ProcessSentinel-win-x64/`，不创建版本目录或 ZIP。基础检查包含风险误报边界、PID 复用、日志恢复、CSV、真实进程枚举和挂起启动。
+
+正式打包发布时，先按需更新 `VERSION`（三段数字，如 `0.1.4`），再执行：
 
 ```powershell
-.\build.ps1 -OutputDirectory .\Releases\ProcessSentinel-0.1.4-win-x64
+.\build.ps1 -Package
 ```
 
-此脚本构建、运行非管理员基础检查，并发布包含运行时的便携目录与 ZIP。基础检查包含风险误报边界、PID 复用、日志恢复、CSV、真实进程枚举和挂起启动。
+只有 `-Package` 模式创建 `Releases/ProcessSentinel-<VERSION>-win-x64/` 和 `Releases/ProcessSentinel-<VERSION>-win-x64.zip`。程序包包含运行时、版本文件和许可文件；再次打包同一版本会更新对应产物。可使用 `-Package -WhatIf` 预览发布路径而不生成产物。
+
+开发程序正在使用时，可指定另一个开发输出目录继续构建：
+
+```powershell
+.\build.ps1 -OutputDirectory .\artifacts\dev-alternate\ProcessSentinel-win-x64
+```
+
+`-NoRestore` 使用已有还原结果；`-SkipTests` 跳过基础和界面检查。开发目录和发布产物均被 Git 忽略。后续功能开发默认使用日常构建流程，正式打包按发布指令执行。
 
 构建时还会运行实际 WPF 界面更新回归检查；也可以单独使用保存的日志验证：
 
 ```powershell
-.\Releases\ProcessSentinel-win-x64\ProcessSentinel.exe --verify-ui .\artifacts\ui-replay-results.txt C:\path\to\session.jsonl
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.exe --verify-ui .\artifacts\ui-replay-results.txt C:\path\to\session.jsonl
 ```
 
 此检查回放已保存的事件，不启动采集器，也不需要管理员权限。
@@ -98,7 +110,7 @@ ETW 有时只提供相对注册表键名，或不能及时解析已存在的文�
 多会话真实 WPF 验证：
 
 ```powershell
-.\Releases\ProcessSentinel-0.1.4-win-x64\ProcessSentinel.exe --verify-multiple .\artifacts\multiple-live-results.txt .\Releases\ProcessSentinel-0.1.4-win-x64\ProcessSentinel.SelfTest.exe
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.exe --verify-multiple .\artifacts\multiple-live-results.txt .\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.SelfTest.exe
 ```
 
 该检查启动 4 个独立采集器，验证重复目标、并发上限、选择性停止、启动失败隔离、事件与日志隔离、全部停止，以及关闭窗口时清理全部会话。只运行自行创建的临时 IPv4 测试程序，不操作用户已有目标。
@@ -106,7 +118,7 @@ ETW 有时只提供相对注册表键名，或不能及时解析已存在的文�
 完整程序树真实验证：
 
 ```powershell
-.\Releases\ProcessSentinel-0.1.4-win-x64\ProcessSentinel.exe --verify-family .\artifacts\family-live-results.txt .\Releases\ProcessSentinel-0.1.4-win-x64\ProcessSentinel.SelfTest.exe
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.exe --verify-family .\artifacts\family-live-results.txt .\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.SelfTest.exe
 ```
 
 该检查创建主进程 → 中间父进程 → 所选工作进程和兄弟分支，从最下层选择启动监控，验证各分支的真实文件、IPv4 网络、注册表和后续子进程活动、角色、边界、同程序会话复用及日志归属。
@@ -116,7 +128,7 @@ ETW 有时只提供相对注册表键名，或不能及时解析已存在的文�
 管理员终端内运行真实 ETW 集成测试：
 
 ```powershell
-.\Releases\ProcessSentinel-win-x64\ProcessSentinel.SelfTest.exe --integration
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.SelfTest.exe --integration
 ```
 
 测试仅创建临时文件、临时 HKCU 测试键、本机 IPv4/IPv6 回环连接和短暂 `cmd.exe` 子进程，成功后清理。测试证据输出为测试程序同目录的 `integration-events.jsonl`。
@@ -124,8 +136,8 @@ ETW 有时只提供相对注册表键名，或不能及时解析已存在的文�
 界面示例图可重新生成：
 
 ```powershell
-.\Releases\ProcessSentinel-win-x64\ProcessSentinel.exe --render-preview .\artifacts\ui-preview.png
-.\Releases\ProcessSentinel-win-x64\ProcessSentinel.exe --render-preview .\artifacts\process-preview.png --processes
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.exe --render-preview .\artifacts\ui-preview.png
+.\artifacts\dev\ProcessSentinel-win-x64\ProcessSentinel.exe --render-preview .\artifacts\process-preview.png --processes
 ```
 
 示例图使用明确标记的示例数据，不是恶意软件检测结果。
