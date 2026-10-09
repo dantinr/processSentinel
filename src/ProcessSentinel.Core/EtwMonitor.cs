@@ -38,10 +38,20 @@ public sealed class EtwMonitor : IDisposable
     {
         if (session is not null) throw new InvalidOperationException("采集器已经启动。");
         if (!IsAdministrator()) throw new UnauthorizedAccessException("ETW 内核采集需要管理员权限。");
-        var current = ProcessCatalog.Get(request.Root.Id);
+        var snapshot = ProcessCatalog.Snapshot();
+        var current = snapshot.FirstOrDefault(x => x.Id == request.Root.Id)
+            ?? throw new InvalidOperationException("程序主进程已退出，请刷新后重新选择。");
         if (request.Root.StartTimeUtcTicks == 0 || current.StartTimeUtcTicks != request.Root.StartTimeUtcTicks)
             throw new InvalidOperationException("目标已退出或 PID 已被重新使用，请重新选择进程。");
-        tracker = new(current, request.IncludeChildren);
+        ProcessFamily? family = null;
+        if (request.SelectedProcess is { } selected)
+        {
+            if (!request.IncludeChildren) throw new InvalidOperationException("程序进程树监控需要包含全部子进程。");
+            family = ProcessFamilyResolver.Resolve(selected, snapshot);
+            if (family.Root.Id != current.Id || family.Root.StartTimeUtcTicks != current.StartTimeUtcTicks)
+                throw new InvalidOperationException("程序进程树已变化，请刷新后重新选择；不会自动扩大到其他程序。");
+        }
+        tracker = new(current, request.IncludeChildren, family?.Selected, family?.Lineage);
         try
         {
             // A private, uniquely named Windows 8+ system-logger session: never replace NT Kernel Logger.
@@ -56,7 +66,8 @@ public sealed class EtwMonitor : IDisposable
             Completion = Task.Factory.StartNew(() => session.Source.Process(), CancellationToken.None,
                 TaskCreationOptions.LongRunning, TaskScheduler.Default);
             Emit(new Activity { ProcessId = current.Id, ProcessName = current.Name, Kind = ActivityKind.System,
-                Operation = "开始", Target = current.Path, Detail = "只记录开始监控后的事件；已存在的网络连接不属于新连接事件。" });
+                Operation = "开始", Target = current.Path, Detail = (family is null ? "" : $"{family.ScopeText}\n父进程追溯边界：{family.Boundary}\n")
+                    + "只记录开始监控后的事件；已存在的网络连接不属于新连接事件。" });
         }
         catch { Dispose(); throw; }
     }

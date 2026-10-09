@@ -12,10 +12,18 @@ public partial class MainWindow
     private readonly ObservableCollection<MonitorSession> sessions = new();
     private MonitorSession? selectedSession, startupSession;
     private bool stopping;
+    private bool cancelStartupRequested;
     private TaskCompletionSource? startupFinished;
 
-    private MonitorSession? FindRunningSession(ProcessInfo root) => sessions.FirstOrDefault(x => (x.Starting || x.Client.Running)
-        && x.Root.Id == root.Id && x.Root.StartTimeUtcTicks == root.StartTimeUtcTicks);
+    private void ScopeOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded) SetControls(client?.Running == true);
+    }
+
+    private MonitorSession? FindRunningSession(ProcessInfo process, bool matchFamily = false) => sessions.FirstOrDefault(x => (x.Starting || x.Client.Running)
+        && ((x.Root.Id == process.Id && x.Root.StartTimeUtcTicks == process.StartTimeUtcTicks)
+            || (matchFamily && x.IncludeChildren && x.Client.Processes.Any(p => p.IsRunning
+                && p.Process.Id == process.Id && p.Process.StartTimeUtcTicks == process.StartTimeUtcTicks))));
 
     private void SessionPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -29,6 +37,8 @@ public partial class MainWindow
         {
             TargetTitle.Text = session.Root.Label;
             TargetPath.Text = session.Root.PathText;
+            TargetScope.Text = session.ScopeText;
+            TargetScope.ToolTip = session.Boundary;
             AppendActivityBatch(session.Recent);
             ApplyProcessSnapshot(session.Client.Processes);
         }
@@ -36,6 +46,7 @@ public partial class MainWindow
         {
             TargetTitle.Text = "让程序的行为变得可见";
             TargetPath.Text = "选择进程后添加监控，可同时监控多个程序。";
+            TargetScope.Text = "选中子进程时，自动纳入所属程序的相关父进程、兄弟及子孙进程。";
             HistoryHint.Text = "每个监控程序独立保存完整日志。";
             StatusText.Text = "就绪 · 选择进程后添加监控";
         }
@@ -72,6 +83,7 @@ public partial class MainWindow
     {
         if (stopping) return;
         stopping = true;
+        cancelStartupRequested = true;
         startupSession?.Client.CancelStartup();
         SetControls(false);
         try

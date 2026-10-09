@@ -38,9 +38,9 @@ public sealed record ProcessInfo(int Id, int ParentId, string Name, string Path,
         ? new DateTime(StartTimeUtcTicks, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "未知";
 }
 
-public sealed record TrackedProcess(ProcessInfo Process, bool IsRoot, bool IsRunning)
+public sealed record TrackedProcess(ProcessInfo Process, bool IsRoot, bool IsRunning, bool IsSelected = false, bool IsAncestor = false)
 {
-    [JsonIgnore] public string RoleText => IsRoot ? "目标" : "子进程";
+    [JsonIgnore] public string RoleText => IsSelected ? IsRoot ? "所选/主" : "所选" : IsRoot ? "主进程" : IsAncestor ? "父进程" : "子进程";
     [JsonIgnore] public string StateText => IsRunning ? "运行中" : "已退出";
     [JsonIgnore] public string PathText => string.IsNullOrEmpty(Process.Path) ? Process.PathText
         : System.IO.Path.IsPathFullyQualified(Process.Path) ? Process.Path : $"{Process.Path}（完整路径未能读取）";
@@ -51,7 +51,7 @@ public sealed record ProcessSnapshot(long Revision, IReadOnlyList<TrackedProcess
     public int ActiveCount => Processes.Count(x => x.IsRunning);
 }
 
-public sealed record MonitorRequest(ProcessInfo Root, bool IncludeChildren);
+public sealed record MonitorRequest(ProcessInfo Root, bool IncludeChildren, ProcessInfo? SelectedProcess = null);
 public sealed record WireMessage(string Type, Activity? Event = null, string? Text = null, long EtwLost = 0, long QueueLost = 0, int ActiveProcesses = 0,
     IReadOnlyList<TrackedProcess>? Processes = null);
 

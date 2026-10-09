@@ -37,7 +37,7 @@
               <Button x:Name="RemoveSessionButton" Grid.Column="3" Content="移除记录" ToolTip="移除已停止的会话视图，磁盘日志仍保留" IsEnabled="False" Click="RemoveSession_Click"/>
               <Button x:Name="StopAllButton" Grid.Column="4" Content="全部停止" IsEnabled="False" Margin="9,0,0,0" Click="StopAll_Click"/>
             </Grid>
-            <StackPanel Grid.Row="1"><TextBlock x:Name="TargetTitle" Text="让程序的行为变得可见" FontSize="21" FontWeight="SemiBold"/><TextBlock x:Name="TargetPath" Text="选择进程后添加监控，可同时监控多个程序。" Foreground="#64748B" Margin="0,7,18,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/><CheckBox x:Name="IncludeChildren" Content="新监控同时跟踪已有和新建的子进程" IsChecked="True" Margin="0,13,0,0"/></StackPanel>
+            <StackPanel Grid.Row="1"><TextBlock x:Name="TargetTitle" Text="让程序的行为变得可见" FontSize="21" FontWeight="SemiBold"/><TextBlock x:Name="TargetPath" Text="选择进程后添加监控，可同时监控多个程序。" Foreground="#64748B" Margin="0,7,18,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/><TextBlock x:Name="TargetScope" Text="选中子进程时，自动纳入所属程序的父进程、兄弟及子孙进程。" Style="{StaticResource Caption}" Margin="0,6,18,0" TextWrapping="Wrap"/><CheckBox x:Name="IncludeChildren" Content="自动监控所属程序的完整进程树" ToolTip="默认包含相关父进程、兄弟和全部子孙进程；取消勾选后仅监控所选 PID。向上追溯止于 Explorer、终端或系统公共宿主。" IsChecked="True" Checked="ScopeOption_Changed" Unchecked="ScopeOption_Changed" Margin="0,10,0,0"/></StackPanel>
             <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="StartButton" Content="添加监控" ToolTip="监控左侧选中的进程，保留其他正在监控的程序" Background="{StaticResource Accent}" BorderBrush="{StaticResource Accent}" Foreground="White" IsEnabled="False" Click="Start_Click"/><Button x:Name="StopButton" Content="停止当前" Margin="9,0,0,0" IsEnabled="False" Click="Stop_Click"/></StackPanel>
           </Grid>
         </Border>
@@ -80,9 +80,9 @@
                   <TextBox x:Name="MonitoredProcessSearch" Style="{StaticResource SearchBox}" Tag="搜索进程名、PID、父 PID 或路径" TextChanged="MonitoredProcessFilter_Changed"/>
                   <CheckBox x:Name="LiveProcessesOnly" Grid.Column="1" Content="只看存活进程" Margin="14,0,0,0" Checked="MonitoredProcessFilter_Changed" Unchecked="MonitoredProcessFilter_Changed"/>
                 </Grid>
-                <DataGrid x:Name="MonitoredProcessGrid" Grid.Row="2" SelectionChanged="MonitoredProcessGrid_SelectionChanged">
+                <DataGrid x:Name="MonitoredProcessGrid" Grid.Row="2" RowHeight="32" ColumnHeaderHeight="32" SelectionChanged="MonitoredProcessGrid_SelectionChanged">
                   <DataGrid.Columns>
-                    <DataGridTextColumn Header="角色" Binding="{Binding RoleText}" Width="65"/>
+                    <DataGridTextColumn Header="角色" Binding="{Binding RoleText}" Width="76"/>
                     <DataGridTextColumn Header="进程名" Binding="{Binding Process.Name}" Width="170" ElementStyle="{StaticResource GridText}"/>
                     <DataGridTextColumn Header="PID" Binding="{Binding Process.Id}" Width="75"/>
                     <DataGridTextColumn Header="父 PID" Binding="{Binding Process.ParentId}" Width="80"/>

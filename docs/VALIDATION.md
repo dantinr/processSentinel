@@ -60,3 +60,20 @@ One WPF window now supports up to four root programs concurrently, each with an 
 Evidence: `artifacts/multiple-core-results.txt`, `artifacts/multiple-packaged-ui-results.txt`, `artifacts/multiple-packaged-final-results.txt`, and `artifacts/multiple-preview.png`. The portable app and ZIP are in `Releases/ProcessSentinel-0.1.3-win-x64/` and `Releases/ProcessSentinel-0.1.3-win-x64.zip`.
 
 The live tests use only temporary IPv4 fixtures created by the diagnostics, including suspended roots for deterministic startup and stop checks. They do not establish new IPv6 coverage, sustained multi-program load capacity, or compatibility beyond this machine. Overlapping descendant scopes can intentionally produce the same event in different journals. No combined all-program event or total-count view is implemented.
+
+## 0.1.4: selecting a member monitors its program tree
+
+Existing PID selection now defaults to walking its current parent chain up to a shared launcher/system-host boundary, then monitoring the resulting root and all descendants. This includes intermediate parents and sibling branches. Existing members of a monitored program reuse that session. Explicit executable launches continue to root their new process tree at the newly created process. Clearing the default option monitors only the selected PID.
+
+The UI and journal retain both the effective root and original selection. Process rosters distinguish the selected process, intermediate ancestors and program root. Parent creation times prevent following reused PIDs; absent/inaccessible parents or cyclic ancestry stop expansion at the last confirmed process. The elevated collector independently revalidates the selected identity and effective root before collecting. Shared launcher names are explicit heuristics, not proof of application ownership or a mechanism for discovering detached service activity.
+
+- Release solution build and self-contained publish: zero warnings and zero errors.
+- Core/self-test: **60 checks passed**, including different-path helpers, parents/siblings/descendants, shared launchers, missing/inaccessible/reused parents, cycles, selected PID reuse and old-request compatibility.
+- Final self-contained bound WPF UI: **23 checks passed**, including original event/retention tests, expanded scope and role details, and clearing another program's roster when switching sessions.
+- Development build, ordinary WPF UI → elevated collector: **16 family checks passed**, capturing **5,088 real events**. A live grandchild selection resolved to its application grandparent, including the intermediate parent and sibling. Real file writes from all four original PIDs, IPv4 traffic, registry changes and later cmd.exe descendants were persisted in one journal, with zero reported ETW/queue loss. Stop left the original family processes running.
+- Four concurrent program-tree sessions: **26 checks passed**, including session reuse, limit handling, startup-resolution failure isolation, selective/all stop, separate logs and closing during a pending stop.
+- Final process-tab preview visually inspected at 1440 × 960; selected child, parent and main process rows are all visible with clearly labeled sample data.
+
+The self-contained live family recheck was attempted twice, but administrator elevation was canceled before the collector started. The second attempt records Windows error 1223 as `已取消管理员授权。`; only a session header was created, so these attempts do not establish packaged ETW capture. Startup errors now remain visible in the session state rather than being replaced by a generic stopped status. The successful development capture and final packaged UI checks are reported separately.
+
+Evidence: `artifacts/family-core-results.txt`, `artifacts/family-live-results.txt`, `artifacts/family-multiple-results.txt`, `artifacts/family-packaged-ui-results.txt`, `artifacts/family-packaged-results.txt`, `artifacts/family-packaged-final-results.txt`, and `artifacts/family-preview.png`. The 0.1.4 portable directory and ZIP preserve the existing versions and remain excluded from Git. IPv6 and sustained-load limitations from prior validation still apply.

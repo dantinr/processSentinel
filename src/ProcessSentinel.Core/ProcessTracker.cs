@@ -7,12 +7,18 @@ public sealed class ProcessTracker
     private readonly Dictionary<(int Id, long Started), TrackedProcess> known = new();
     private readonly object gate = new();
     private readonly bool includeChildren;
+    private readonly (int Id, long Started) selectedIdentity;
+    private readonly HashSet<(int Id, long Started)> ancestors;
     private long revision = 1;
-    public ProcessTracker(ProcessInfo root, bool includeChildren)
+    public ProcessTracker(ProcessInfo root, bool includeChildren, ProcessInfo? selected = null, IReadOnlyList<ProcessInfo>? lineage = null)
     {
         this.includeChildren = includeChildren;
+        selected ??= root;
+        selectedIdentity = (selected.Id, selected.StartTimeUtcTicks);
+        ancestors = (lineage ?? []).Where(x => x.Id != selected.Id).Select(x => (x.Id, x.StartTimeUtcTicks)).ToHashSet();
         active[root.Id] = root;
-        known[(root.Id, root.StartTimeUtcTicks)] = new(root, true, true);
+        known[(root.Id, root.StartTimeUtcTicks)] = Describe(root, true);
+        if (lineage is not null) Seed(lineage);
     }
     public int Count { get { lock (gate) return active.Count; } }
     public ProcessInfo? Find(int id) { lock (gate) return active.GetValueOrDefault(id); }
@@ -52,11 +58,13 @@ public sealed class ProcessTracker
             if (!includeChildren || !active.TryGetValue(process.ParentId, out var parent)) return false;
             if (process.StartTimeUtcTicks <= 0 || process.StartTimeUtcTicks < parent.StartTimeUtcTicks) return false;
             active[process.Id] = process;
-            known[(process.Id, process.StartTimeUtcTicks)] = new(process, false, true);
+            known[(process.Id, process.StartTimeUtcTicks)] = Describe(process, false);
             revision++;
             return true;
         }
     }
+    private TrackedProcess Describe(ProcessInfo process, bool isRoot) => new(process, isRoot, true,
+        (process.Id, process.StartTimeUtcTicks) == selectedIdentity, ancestors.Contains((process.Id, process.StartTimeUtcTicks)));
     public ProcessInfo? Stop(int id)
     {
         lock (gate)

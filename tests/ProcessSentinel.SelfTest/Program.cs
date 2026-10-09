@@ -11,9 +11,8 @@ int reportIndex = Array.IndexOf(args, "--report");
 using var reportWriter = reportIndex >= 0 && reportIndex + 1 < args.Length ? new StreamWriter(args[reportIndex + 1], false, new UTF8Encoding(false)) { AutoFlush = true } : null;
 if (reportWriter is not null) { Console.SetOut(reportWriter); Console.SetError(reportWriter); }
 
-if (args.Length == 2 && args[0] is "--fixture" or "--fixture-ipv4")
+static async Task RunFixture(string directory, bool includeIPv6)
 {
-    string directory = args[1];
     await Task.Delay(300);
     Directory.CreateDirectory(directory);
     string path = Path.Combine(directory, "probe.txt");
@@ -37,7 +36,7 @@ if (args.Length == 2 && args[0] is "--fixture" or "--fixture-ipv4")
     using var udpSender = new UdpClient();
     await udpSender.SendAsync(payload, (IPEndPoint)udpReceiver.Client.LocalEndPoint!);
     await udpReceiver.ReceiveAsync();
-    if (Socket.OSSupportsIPv6 && args[0] == "--fixture")
+    if (Socket.OSSupportsIPv6 && includeIPv6)
     {
         var ipv6 = new TcpListener(IPAddress.IPv6Loopback, 0);
         ipv6.Start();
@@ -61,7 +60,48 @@ if (args.Length == 2 && args[0] is "--fixture" or "--fixture-ipv4")
     File.Move(path, Path.Combine(directory, "renamed.txt"));
     File.Delete(Path.Combine(directory, "renamed.txt"));
     await Task.Delay(1000);
+}
+
+if (args.Length == 2 && args[0] is "--fixture" or "--fixture-ipv4")
+{
+    await RunFixture(args[1], args[0] == "--fixture");
     return 0;
+}
+
+if (args.Length == 3 && args[0] == "--family-fixture")
+{
+    string directory = args[1], role = args[2];
+    var children = new List<Process>();
+    try
+    {
+        Directory.CreateDirectory(directory);
+        foreach (string childRole in role == "root" ? new[] { "parent", "sibling" } : role == "parent" ? new[] { "selected" } : Array.Empty<string>())
+            children.Add(Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--family-fixture \"" + directory + "\" " + childRole)
+                { UseShellExecute = false, CreateNoWindow = true }) ?? throw new InvalidOperationException("Unable to create family fixture child."));
+        string pidMarker = Path.Combine(directory, role + ".pid");
+        File.WriteAllText(pidMarker + ".tmp", Environment.ProcessId.ToString());
+        File.Move(pidMarker + ".tmp", pidMarker);
+        var timeout = Stopwatch.StartNew();
+        while (!File.Exists(Path.Combine(directory, "run")) && !File.Exists(Path.Combine(directory, "exit")))
+        {
+            if (timeout.Elapsed > TimeSpan.FromSeconds(60)) throw new TimeoutException("Family fixture startup timed out.");
+            await Task.Delay(50);
+        }
+        if (File.Exists(Path.Combine(directory, "run")))
+        {
+            await RunFixture(Path.Combine(directory, role), false);
+            File.WriteAllText(Path.Combine(directory, role + ".done"), "complete");
+        }
+        while (!File.Exists(Path.Combine(directory, "exit")))
+        {
+            if (timeout.Elapsed > TimeSpan.FromSeconds(90)) throw new TimeoutException("Family fixture cleanup timed out.");
+            await Task.Delay(50);
+        }
+        foreach (var child in children) await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        return 0;
+    }
+    catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+    finally { foreach (var child in children) child.Dispose(); }
 }
 
 int passed = 0;
@@ -129,6 +169,50 @@ try
     Check(!single.Start(new(11, 10, "child.exe", "", 120)) && single.Count == 1, "child toggle excludes descendants");
     Check(single.GetSnapshot()!.Processes.Count == 1 && single.GetSnapshot()!.Processes[0].IsRoot,
         "root-only monitoring roster excludes descendants");
+
+    var launcher = new ProcessInfo(20, 1, "explorer.exe", @"C:\Windows\explorer.exe", 10);
+    var application = new ProcessInfo(21, 20, "app.exe", @"C:\Apps\app.exe", 20);
+    var helper = new ProcessInfo(22, 21, "helper.exe", @"C:\OtherRuntime\helper.exe", 30);
+    var chosen = new ProcessInfo(23, 22, "worker.exe", @"C:\OtherRuntime\worker.exe", 40);
+    var sibling = new ProcessInfo(24, 21, "sibling.exe", @"C:\Apps\sibling.exe", 50);
+    var unrelated = new ProcessInfo(25, 20, "unrelated.exe", @"C:\OtherApp\unrelated.exe", 60);
+    ProcessInfo[] familySnapshot = [chosen, sibling, launcher, helper, application, unrelated];
+    var family = ProcessFamilyResolver.Resolve(chosen, familySnapshot);
+    Check(family.Root == application && family.Lineage.SequenceEqual(new[] { chosen, helper, application }),
+        "child selection resolves its application root across different helper executable paths");
+    var familyTracker = new ProcessTracker(family.Root, true, family.Selected, family.Lineage);
+    familyTracker.Seed(familySnapshot);
+    var familyRoster = familyTracker.GetSnapshot()!.Processes;
+    Check(familyRoster.Count == 4 && familyTracker.Find(sibling.Id) is not null && familyTracker.Find(launcher.Id) is null
+        && familyTracker.Find(unrelated.Id) is null, "program scope includes parents, siblings and descendants while excluding Explorer and unrelated apps");
+    Check(familyRoster.Single(x => x.IsRoot).RoleText == "主进程" && familyRoster.Single(x => x.Process.Id == helper.Id).RoleText == "父进程"
+        && familyRoster.Single(x => x.IsSelected).Process == chosen, "process roster identifies application root, intermediate parents and exact selection");
+    Check(familyTracker.Start(new(26, 24, "later-child.exe", "", 70)), "new descendants of an existing sibling are followed");
+    Check(ProcessFamilyResolver.Resolve(sibling, familySnapshot).Root == application, "different children resolve to the same program root");
+    foreach (string boundaryName in new[] { "cmd.exe", "pwsh.exe", "WindowsTerminal.exe", "svchost.exe", "services.exe", "ProcessSentinel.exe" })
+        Check(ProcessFamilyResolver.Resolve(chosen, familySnapshot.Select(x => x.Id == launcher.Id ? x with { Name = boundaryName } : x)).Root == application,
+            "program scope stops before shared launcher " + boundaryName);
+    Check(ProcessFamilyResolver.Resolve(chosen, familySnapshot.Where(x => x.Id != helper.Id)).Root == chosen,
+        "missing parent leaves the selected subtree explicit rather than guessing by process name");
+    Check(ProcessFamilyResolver.Resolve(chosen, familySnapshot.Select(x => x.Id == helper.Id ? x with { StartTimeUtcTicks = 1000 } : x)).Root == chosen,
+        "reused parent PID cannot expand monitoring into an unrelated newer process");
+    Check(ProcessFamilyResolver.Resolve(chosen, familySnapshot.Select(x => x.Id == helper.Id ? x with { StartTimeUtcTicks = 0 } : x)).Root == chosen,
+        "unreadable parent identity stops automatic expansion");
+    var cyclic = ProcessFamilyResolver.Resolve(chosen, familySnapshot.Select(x => x.Id == application.Id ? x with { ParentId = helper.Id, StartTimeUtcTicks = 30 } : x));
+    Check(cyclic.Lineage.Count == 3 && cyclic.Boundary.Contains("循环"), "cyclic parent chain terminates safely");
+    bool rejectedSelection = false;
+    try { ProcessFamilyResolver.Resolve(chosen with { StartTimeUtcTicks = 999 }, familySnapshot); }
+    catch (InvalidOperationException) { rejectedSelection = true; }
+    Check(rejectedSelection, "stale selected PID identity is rejected");
+    familyTracker.Stop(chosen.Id);
+    Check(familyTracker.Start(chosen with { StartTimeUtcTicks = 100, Name = "reused-worker.exe" })
+        && !familyTracker.GetSnapshot()!.Processes.Single(x => x.Process.Id == chosen.Id && x.IsRunning).IsSelected,
+        "reused selected PID does not inherit the original selection role");
+    var familyRequestCopy = Protocol.Deserialize<MonitorRequest>(Protocol.Serialize(family.Request));
+    Check(familyRequestCopy?.Root == application && familyRequestCopy.SelectedProcess == chosen,
+        "family protocol preserves both effective root and original selected process");
+    var legacyRequest = Protocol.Deserialize<MonitorRequest>("{\"Root\":" + Protocol.Serialize(root) + ",\"IncludeChildren\":true}");
+    Check(legacyRequest?.Root == root && legacyRequest.SelectedProcess is null, "older single-root requests remain readable");
     var catalog = ProcessCatalog.Snapshot();
     Check(catalog.Any(x => x.Id == Environment.ProcessId && x.StartTimeUtcTicks > 0 && File.Exists(x.Path)), "real Windows process snapshot");
 

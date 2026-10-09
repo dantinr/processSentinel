@@ -10,7 +10,7 @@ public partial class MainWindow
     internal void ShowProcessPreview()
     {
         MonitorTabs.SelectedIndex = 1;
-        MonitoredProcessGrid.SelectedIndex = 0;
+        MonitoredProcessGrid.SelectedItem = monitoredProcesses.FirstOrDefault(x => x.IsSelected) ?? monitoredProcesses.FirstOrDefault();
     }
 
     internal void PrepareForDiagnostics()
@@ -108,7 +108,7 @@ public partial class MainWindow
             "restarting monitoring clears the previous process roster");
         MonitorTabs.SelectedIndex = 0;
 
-        var first = new MonitorSession(rootProcess, true) { Starting = false };
+        var first = new MonitorSession(new(rootProcess, true, newChild), "fixture boundary") { Starting = false };
         var second = new MonitorSession(newChild, false) { Starting = false };
         var firstEvent = saved[0] with { ProcessId = rootProcess.Id, Target = "session-one-only" };
         var secondEvent = saved[0] with { ProcessId = newChild.Id, Target = "session-two-only" };
@@ -119,7 +119,14 @@ public partial class MainWindow
         SessionPicker.SelectedItem = first;
         Check(activities.Count == 1 && activities.Single().Target == firstEvent.Target && client == first.Client,
             "selecting a session shows only its own activities and client");
+        ApplyProcessSnapshot([new(rootProcess, true, true, IsAncestor: true), new(idleChild, false, true, IsAncestor: true), new(newChild, false, true, IsSelected: true)]);
+        MonitorTabs.SelectedIndex = 1;
+        MonitoredProcessGrid.SelectedItem = monitoredProcesses.Single(x => x.Process.Id == idleChild.Id);
+        Check(TargetScope.Text.Contains(newChild.Label) && TargetTitle.Text.Contains(rootProcess.Id.ToString())
+            && DetailText.Text.Contains("父进程") && monitoredProcesses.Single(x => x.IsSelected).RoleText == "所选",
+            "bound scope and role details distinguish selected child, parent and effective root");
         SessionPicker.SelectedItem = second;
+        Check(monitoredProcesses.Count == 0, "switching sessions clears the prior application's process roster");
         Check(activities.Count == 5000 && activities.First().Sequence == 1000 && activities.Last().Sequence == 5999
             && activities.All(x => x.ProcessId == newChild.Id), "each background session independently retains its newest 5,000 events");
         SessionPicker.SelectedItem = first;
@@ -128,6 +135,7 @@ public partial class MainWindow
         await RemoveSessionAsync();
         Check(sessions.Count == 1 && client == second.Client && activities.Count == 5000,
             "removing a stopped session selects another session and preserves its history");
+        MonitorTabs.SelectedIndex = 0;
     }
 
     internal async Task VerifyMultipleUiAsync(string fixturePath, Action<string> passed)
@@ -157,8 +165,9 @@ public partial class MainWindow
             var second = sessions[1];
             await BeginAsync(first.Root, null);
             Check(sessions.Count == 4 && selectedSession == first, "re-adding a monitored root selects its existing session");
-            await BeginAsync(first.Root with { StartTimeUtcTicks = first.Root.StartTimeUtcTicks + 1 }, null);
-            Check(sessions.Count == 4 && sessions.All(x => x.Client.Running), "concurrency limit rejects an extra session without disrupting existing collectors");
+            using (var extra = SuspendedProgram.Create(fixturePath, "--fixture-ipv4 \"" + System.IO.Path.Combine(directory, "extra") + "\""))
+                Check(!await BeginAsync(ProcessCatalog.Get(extra.Id), null) && sessions.Count == 4 && sessions.All(x => x.Client.Running),
+                    "concurrency limit rejects an extra session without disrupting existing collectors");
             programs[0].Resume();
             await targets[0].WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(25));
             Check(targets[0].ExitCode == 0, "first benign fixture completes normally");
@@ -168,11 +177,8 @@ public partial class MainWindow
                 "stopping the current session leaves three collectors and the other target programs running");
 
             // An exited root is a deterministic startup failure; it must not stop the other collectors.
-            await BeginAsync(first.Root, null);
-            Check(selectedSession is { } failed && !failed.Client.Running && !string.IsNullOrEmpty(failed.Client.Error)
-                && sessions.Skip(1).Take(3).All(x => x.Client.Running), "failed target startup leaves other monitoring sessions intact");
-            await RemoveSessionAsync();
-            Check(sessions.Count == 4, "failed session can be removed without losing other session records");
+            Check(!await BeginAsync(first.Root, null) && sessions.Count == 4 && sessions.Skip(1).All(x => x.Client.Running),
+                "failed target resolution leaves other monitoring sessions intact");
 
             SessionPicker.SelectedItem = second;
             Check(!monitoredProcesses.Any(x => x.Process.Id == first.Root.Id) && monitoredProcesses.Any(x => x.Process.Id == second.Root.Id),
@@ -242,7 +248,8 @@ public partial class MainWindow
             await Task.Delay(2000);
             var roster = client.Processes;
             if (roster.Count == 0 || roster.Count(x => x.IsRunning) != client.ActiveProcesses
-                || !roster.Any(x => x.IsRoot && x.Process.Id == root.Id && x.Process.StartTimeUtcTicks == root.StartTimeUtcTicks))
+                || !roster.Any(x => x.Process.Id == root.Id && x.Process.StartTimeUtcTicks == root.StartTimeUtcTicks)
+                || !roster.Any(x => x.IsRoot && x.Process.Id == selectedSession!.Root.Id && x.Process.StartTimeUtcTicks == selectedSession.Root.StartTimeUtcTicks))
                 throw new InvalidOperationException("Collector roster is missing the target or tracked descendants.");
             MonitorTabs.SelectedIndex = 1;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

@@ -87,55 +87,70 @@ public partial class MainWindow : Window
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法启动程序", MessageBoxButton.OK, MessageBoxImage.Information); }
         finally { program?.Dispose(); }
     }
-    private async Task BeginAsync(ProcessInfo process, SuspendedProgram? program)
+    private async Task<bool> BeginAsync(ProcessInfo process, SuspendedProgram? program)
     {
-        if (starting || stopping || closing) return;
-        if (FindRunningSession(process) is { } existing)
+        if (starting || stopping || closing) return false;
+        bool includeTree = IncludeChildren.IsChecked == true;
+        if (FindRunningSession(process, includeTree) is { } existing)
         {
             SessionPicker.SelectedItem = existing;
-            StatusText.Text = "该进程已在监控中，已切换到对应会话。";
-            return;
-        }
-        if (sessions.Count(x => x.Client.Running) >= MaximumConcurrentSessions)
-        {
-            StatusText.Text = $"最多同时监控 {MaximumConcurrentSessions} 个根程序，请先停止一个会话。";
-            return;
+            StatusText.Text = "该进程已包含在程序监控中，已切换到对应会话。";
+            return true;
         }
         starting = true;
+        cancelStartupRequested = false;
         startupFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        var session = new MonitorSession(process, IncludeChildren.IsChecked == true);
-        startupSession = session;
-        session.UpdateLabel();
-        sessions.Add(session);
-        SessionPicker.SelectedItem = session;
+        MonitorSession? session = null;
         SetControls(true);
         try
         {
-            TargetTitle.Text = process.Label;
-            TargetPath.Text = process.PathText;
+            StatusText.Text = "正在识别所属程序的进程树…";
+            // Explicit launches start a new tree. Existing PID selection resolves its application root.
+            var family = includeTree && program is null
+                ? await Task.Run(() => ProcessFamilyResolver.Resolve(process, ProcessCatalog.Snapshot())) : null;
+            if (closing || stopping || cancelStartupRequested) throw new OperationCanceledException();
+            var request = family?.Request ?? new MonitorRequest(process, includeTree);
+            if (FindRunningSession(request.Root, includeTree) is { } sameProgram)
+            {
+                SessionPicker.SelectedItem = sameProgram;
+                return true;
+            }
+            if (sessions.Count(x => x.Client.Running) >= MaximumConcurrentSessions)
+                throw new InvalidOperationException($"最多同时监控 {MaximumConcurrentSessions} 个程序，请先停止一个会话。");
+            session = new MonitorSession(request, family?.Boundary ?? "");
+            startupSession = session;
+            session.UpdateLabel();
+            sessions.Add(session);
+            SessionPicker.SelectedItem = session;
+            TargetTitle.Text = session.Root.Label;
+            TargetPath.Text = session.Root.PathText;
+            TargetScope.Text = session.ScopeText;
+            TargetScope.ToolTip = session.Boundary;
             EmptyTitle.Text = "等待采集器就绪";
             StatusText.Text = "请在 Windows UAC 提示中允许采集器运行…";
             RunBadge.Text = "●  正在连接采集器";
-            await session.Client.StartAsync(new(process, session.IncludeChildren));
-            if (closing || stopping) throw new OperationCanceledException();
+            await session.Client.StartAsync(session.Request);
+            if (closing || stopping || cancelStartupRequested) throw new OperationCanceledException();
             program?.Resume();
             session.Duration.Restart();
             RunBadge.Text = "●  正在监控";
             StatusText.Text = "监控已开始 · 完整记录正在保存";
             ExportButton.IsEnabled = true;
+            return true;
         }
         catch (Exception ex)
         {
-            await session.Client.StopAsync();
+            if (session is not null) await session.Client.StopAsync();
             string message = ex is Win32Exception { NativeErrorCode: 1223 } ? "已取消管理员授权。" : ex is OperationCanceledException ? "连接已取消或超时。" : ex.Message;
+            if (session is not null) session.StartupError = message;
             StatusText.Text = message;
             RunBadge.Text = "●  未开始监控";
             if (!closing && !diagnostics) MessageBox.Show(this, message, "未开始监控", MessageBoxButton.OK, MessageBoxImage.Information);
+            return false;
         }
         finally
         {
-            session.Starting = false;
-            session.UpdateLabel();
+            if (session is not null) { session.Starting = false; session.UpdateLabel(); }
             startupSession = null;
             starting = false;
             startupFinished.TrySetResult();
@@ -148,9 +163,10 @@ public partial class MainWindow : Window
         bool available = !starting && !stopping && !closing;
         bool capacity = sessions.Count(x => x.Client.Running) < MaximumConcurrentSessions;
         StartButton.IsEnabled = available && ProcessList.SelectedItem is ProcessInfo { Id: > 0, StartTimeUtcTicks: > 0 } info
-            && info.Id != Environment.ProcessId && (capacity || FindRunningSession(info) is not null);
+            && info.Id != Environment.ProcessId && (capacity || FindRunningSession(info, IncludeChildren.IsChecked == true) is not null);
         LaunchButton.IsEnabled = available && capacity;
         StopButton.IsEnabled = !stopping && !closing && (starting || busy);
+        StopButton.Content = starting ? "取消启动" : "停止当前";
         RefreshButton.IsEnabled = available;
         ProcessList.IsEnabled = available;
         IncludeChildren.IsEnabled = available;
@@ -160,7 +176,7 @@ public partial class MainWindow : Window
     private async void Stop_Click(object sender, RoutedEventArgs e)
     {
         StopButton.IsEnabled = false;
-        if (starting) { startupSession?.Client.CancelStartup(); return; }
+        if (starting) { cancelStartupRequested = true; startupSession?.Client.CancelStartup(); return; }
         await StopAsync();
     }
     private async Task StopAsync()
@@ -194,7 +210,8 @@ public partial class MainWindow : Window
         else
         {
             duration.Stop();
-            StatusText.Text = string.IsNullOrEmpty(client.Error) ? $"当前监控已停止 · 日志保存于 {client.JournalPath}" : "当前采集异常 · " + client.Error;
+            string error = selectedSession?.Error ?? client.Error;
+            StatusText.Text = string.IsNullOrEmpty(error) ? $"当前监控已停止 · 日志保存于 {client.JournalPath}" : "当前采集异常 · " + error;
         }
         if (client.EtwLost + client.QueueLost > 0) StatusText.Text += " · 有事件丢失，日志不完整";
         ExportButton.IsEnabled = !string.IsNullOrEmpty(client.JournalPath);
@@ -265,7 +282,7 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo("explorer.exe", "\"" + directory + "\"") { UseShellExecute = true });
     }
     private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "1. 选择进程后点击“添加监控”，或选择 .exe 启动并监控；最多同时监控 4 个根程序。\n2. 每个程序独立请求采集器权限、保存日志；新启动的目标使用界面当前权限。\n3. 顶部“查看程序”切换行为、统计和进程名单，其他程序持续监控。\n4. “停止当前”仅停止选中会话，“全部停止”停止所有会话，目标程序继续运行。\n5. 左侧可继续选择并添加程序；子进程选项只用于新监控。已监控的根 PID 不会重复添加。\n6. 已停止会话可查看、导出或移除记录；移除不会删除日志。\n\n覆盖：文件操作、TCP/UDP 端点与传输字节、注册表、子进程、模块加载。\n限制：只记录监控开始后的事件；无法保证观察所有行为，不读取 HTTPS 内容、文件内容或注册表值，不检测内存注入。文件操作默认是请求，不能视为已成功。\n\n“需复核 / 高关注”表示行为线索，不能直接认定恶意；没有提示也不能证明安全。ETW 或队列丢失会明确显示。\n\nUAC 需要使用同一个 Windows 用户；换用其他管理员账户无法连接采集器。多个程序的子进程范围重叠时，同一事件可能分别记录到各自日志。",
+        "1. 选择任意进程后点击“添加监控”，默认自动监控所属程序的完整进程树，最多同时监控 4 个程序。\n2. 选中子进程也会纳入相关父进程、兄弟及全部子孙进程；向上追溯止于 Explorer、终端和系统公共宿主。\n3. 标题显示程序主进程，范围说明保留原始所选 PID；进程名单区分主进程、父进程和所选进程。同程序成员复用已有会话。\n4. 取消勾选自动程序树后仅监控所选 PID；选项只应用于新会话。选择 .exe 启动时，以新进程为根跟踪后代。\n5. 每个程序独立请求采集器权限、保存日志；新启动的目标使用界面当前权限。顶部切换查看时，其他程序持续监控。\n6. “停止当前”停止选中会话，“全部停止”停止所有会话，已运行的目标继续运行。已停止会话可导出或移除视图，磁盘日志保留。\n\n父链已退出、身份无法读取或 PID 复用时，在可确认位置停止追溯；范围提示可查看原因，不按名字合并所有同名程序。\n\n覆盖：文件操作、TCP/UDP 端点与传输字节、注册表、子进程、模块加载。\n限制：只记录监控开始后的事件；无法保证观察所有行为，不读取 HTTPS 内容、文件内容或注册表值，不检测内存注入。文件操作默认是请求，不能视为已成功。\n\n“需复核 / 高关注”表示行为线索，不能直接认定恶意；没有提示也不能证明安全。ETW 或队列丢失会明确显示。\n\nUAC 需要使用同一个 Windows 用户；换用其他管理员账户无法连接采集器。多个程序的子进程范围重叠时，同一事件可能分别记录到各自日志。",
         "行为哨兵 · 第一版使用说明", MessageBoxButton.OK, MessageBoxImage.Information);
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
@@ -288,6 +305,7 @@ public partial class MainWindow : Window
         {
             if (starting)
             {
+                cancelStartupRequested = true;
                 startupSession?.Client.CancelStartup();
                 if (startupFinished is { } completion) await completion.Task;
             }
@@ -324,22 +342,25 @@ public partial class MainWindow : Window
         long previewStart = DateTime.UtcNow.AddMinutes(-15).Ticks;
         list[0] = list[0] with { StartTimeUtcTicks = previewStart };
         list[1] = list[1] with { StartTimeUtcTicks = previewStart + TimeSpan.TicksPerSecond };
+        var previewParent = new ProcessInfo(13500, list[0].Id, "sample-helper.exe", @"D:\Apps\Sample\sample-helper.exe", previewStart + TimeSpan.TicksPerMillisecond);
+        list[1] = list[1] with { ParentId = previewParent.Id, Path = @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" };
         ProcessList.ItemsSource = list;
         ProcessList.SelectedIndex = 0;
         ProcessCount.Text = "示例进程 · 界面预览";
-        var previewSession = new MonitorSession(list[0], true) { Starting = false };
+        var previewSession = new MonitorSession(new(list[0], true, list[1]), "示例：向上追溯止于 explorer.exe") { Starting = false };
         var otherPreviewSession = new MonitorSession(list[3], true) { Starting = false };
         sessions.Add(previewSession);
         sessions.Add(otherPreviewSession);
         SessionPicker.SelectedItem = previewSession;
+        ProcessList.SelectedIndex = 1;
         previewSession.UpdateLabel("示例：监控中");
         otherPreviewSession.UpdateLabel("示例：监控中");
         SessionCount.Text = "示例 · 同时监控 2 个程序";
         TargetTitle.Text = "sample-app.exe · PID 8420";
         TargetPath.Text = @"D:\Apps\Sample\sample-app.exe";
         RunBadge.Text = "●  示例数据预览";
-        TotalText.Text = "1,284"; TrafficText.Text = "2.4 MB"; TrafficDetail.Text = "↑ 420 KB   ↓ 2 MB"; FileText.Text = "926 / 184"; AlertText.Text = "3"; ProcessStat.Text = "2 个存活目标进程";
-        ApplyProcessSnapshot([new(list[0], true, true), new(list[1] with { Path = @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" }, false, true)]);
+        TotalText.Text = "1,284"; TrafficText.Text = "2.4 MB"; TrafficDetail.Text = "↑ 420 KB   ↓ 2 MB"; FileText.Text = "926 / 184"; AlertText.Text = "3"; ProcessStat.Text = "3 个存活目标进程";
+        ApplyProcessSnapshot([new(list[0], true, true, IsAncestor: true), new(previewParent, false, true, IsAncestor: true), new(list[1], false, true, IsSelected: true)]);
         var samples = new[] {
             new Activity { Kind = ActivityKind.File, Operation = "读取", Target = @"C:\Users\demo\AppData\Local\Google\Chrome\User Data\Default\Login Data", Detail = "请求读取 4,096 字节；未确认完成状态。" },
             new Activity { Kind = ActivityKind.Network, Operation = "连接", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 只记录端点，不读取通信内容。" },

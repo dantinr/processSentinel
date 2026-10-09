@@ -37,6 +37,12 @@ public partial class App : Application
             _ = VerifyMultipleAsync(e.Args[1], e.Args[2]);
             return;
         }
+        if (e.Args.Length == 3 && e.Args[0] == "--verify-family")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = VerifyMultipleAsync(e.Args[1], e.Args[2], verifyFamily: true);
+            return;
+        }
         var window = new MainWindow();
         if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] == "--processes") && e.Args[0] == "--render-preview")
         {
@@ -115,7 +121,7 @@ public partial class App : Application
         }
     }
 
-    private async Task VerifyMultipleAsync(string reportPath, string fixturePath)
+    private async Task VerifyMultipleAsync(string reportPath, string fixturePath, bool verifyFamily = false)
     {
         var lines = new List<string>();
         var window = new MainWindow();
@@ -125,7 +131,8 @@ public partial class App : Application
         {
             window.Show();
             await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            await window.VerifyMultipleUiAsync(fixturePath, lines.Add);
+            if (verifyFamily) await window.VerifyFamilyUiAsync(fixturePath, lines.Add);
+            else await window.VerifyMultipleUiAsync(fixturePath, lines.Add);
             code = 0;
         }
         catch (Exception ex) { lines.Add("FAIL: " + ex); }
