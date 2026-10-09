@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ProcessSentinel.App/ProcessSentinel.App.csproj" />
+    <Project Path="src/ProcessSentinel.Collector/ProcessSentinel.Collector.csproj" />
+    <Project Path="src/ProcessSentinel.Core/ProcessSentinel.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProcessSentinel.SelfTest/ProcessSentinel.SelfTest.csproj" />
+  </Folder>
+</Solution>

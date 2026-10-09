@@ -1,0 +1,28 @@
+# Build and release output
+**/bin/
+**/obj/
+/artifacts/
+/Releases/
+**/TestResults/
+
+# Local IDE settings
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Captured monitoring data and diagnostics
+*.jsonl
+*.log
+*.etl
+*.dmp
+
+# Temporary files and downloaded API references
+*.tmp
+*.bak
+*.reference.txt
+Thumbs.db
+Desktop.ini

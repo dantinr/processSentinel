@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ProcessSentinel</AssemblyName>
+    <Product>行为哨兵</Product>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ProcessSentinel.Core/ProcessSentinel.Core.csproj" />
+    <ProjectReference Include="../ProcessSentinel.Collector/ProcessSentinel.Collector.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyCollector" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup><CollectorFiles Include="../ProcessSentinel.Collector/bin/$(Configuration)/net10.0-windows/$(RuntimeIdentifier)/*" /></ItemGroup>
+    <Copy SourceFiles="@(CollectorFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
