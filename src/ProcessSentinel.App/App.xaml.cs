@@ -31,6 +31,12 @@ public partial class App : Application
             _ = VerifyCollectorAsync(e.Args[1], e.Args[2]);
             return;
         }
+        if (e.Args.Length == 3 && e.Args[0] == "--verify-multiple")
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = VerifyMultipleAsync(e.Args[1], e.Args[2]);
+            return;
+        }
         var window = new MainWindow();
         if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] == "--processes") && e.Args[0] == "--render-preview")
         {
@@ -104,6 +110,30 @@ public partial class App : Application
         finally
         {
             if (Directory.Exists(directory)) Directory.Delete(directory, true);
+            await File.WriteAllLinesAsync(reportPath, lines);
+            Shutdown(code);
+        }
+    }
+
+    private async Task VerifyMultipleAsync(string reportPath, string fixturePath)
+    {
+        var lines = new List<string>();
+        var window = new MainWindow();
+        window.PrepareForDiagnostics();
+        int code = 1;
+        try
+        {
+            window.Show();
+            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            await window.VerifyMultipleUiAsync(fixturePath, lines.Add);
+            code = 0;
+        }
+        catch (Exception ex) { lines.Add("FAIL: " + ex); }
+        finally
+        {
+            try { if (window.IsVisible) await window.CloseForDiagnosticsAsync(); }
+            catch (Exception ex) { lines.Add("FAIL: window close: " + ex); code = 1; }
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(reportPath))!);
             await File.WriteAllLinesAsync(reportPath, lines);
             Shutdown(code);
         }

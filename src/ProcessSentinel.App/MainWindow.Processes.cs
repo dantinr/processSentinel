@@ -49,7 +49,7 @@ public partial class MainWindow
         if (monitoredProcesses.Count == 0)
             MonitoredProcessCount.Text = "开始监控后显示目标及其全部被跟踪子进程";
         else
-            MonitoredProcessCount.Text = $"{(client?.Running == false ? "监控已停止 · 最后记录：" : "")}存活 {active} · 已退出 {monitoredProcesses.Count - active} · 共 {monitoredProcesses.Count} 个进程";
+            MonitoredProcessCount.Text = $"{(!preview && client?.Running == false ? "监控已停止 · 最后记录：" : "")}存活 {active} · 已退出 {monitoredProcesses.Count - active} · 共 {monitoredProcesses.Count} 个进程";
     }
 
     private void ClearMonitoredProcesses()
@@ -90,6 +90,6 @@ public partial class MainWindow
             return;
         }
         var process = value.Process;
-        DetailText.Text = $"{process.Label}\n角色：{value.RoleText}   父 PID：{process.ParentId}   {(client?.Running == false ? "最后状态" : "状态")}：{value.StateText}\n启动时间：{process.StartTimeText}\n程序路径：{value.PathText}";
+        DetailText.Text = $"{process.Label}\n角色：{value.RoleText}   父 PID：{process.ParentId}   {(!preview && client?.Running == false ? "最后状态" : "状态")}：{value.StateText}\n启动时间：{process.StartTimeText}\n程序路径：{value.PathText}";
     }
 }

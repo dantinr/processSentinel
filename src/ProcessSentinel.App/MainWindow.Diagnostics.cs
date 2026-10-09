@@ -107,6 +107,127 @@ public partial class MainWindow
         Check(MonitoredProcessGrid.Items.Count == 0 && MonitoredProcessTab.Header.ToString()!.Contains("0"),
             "restarting monitoring clears the previous process roster");
         MonitorTabs.SelectedIndex = 0;
+
+        var first = new MonitorSession(rootProcess, true) { Starting = false };
+        var second = new MonitorSession(newChild, false) { Starting = false };
+        var firstEvent = saved[0] with { ProcessId = rootProcess.Id, Target = "session-one-only" };
+        var secondEvent = saved[0] with { ProcessId = newChild.Id, Target = "session-two-only" };
+        first.Retain(firstEvent);
+        for (int i = 0; i < 6000; i++) second.Retain(secondEvent with { Sequence = i });
+        sessions.Add(first);
+        sessions.Add(second);
+        SessionPicker.SelectedItem = first;
+        Check(activities.Count == 1 && activities.Single().Target == firstEvent.Target && client == first.Client,
+            "selecting a session shows only its own activities and client");
+        SessionPicker.SelectedItem = second;
+        Check(activities.Count == 5000 && activities.First().Sequence == 1000 && activities.Last().Sequence == 5999
+            && activities.All(x => x.ProcessId == newChild.Id), "each background session independently retains its newest 5,000 events");
+        SessionPicker.SelectedItem = first;
+        Check(activities.Count == 1 && activities.Single().ProcessId == rootProcess.Id && second.Recent.Count == 5000,
+            "switching back restores the original history without clearing another session");
+        await RemoveSessionAsync();
+        Check(sessions.Count == 1 && client == second.Client && activities.Count == 5000,
+            "removing a stopped session selects another session and preserves its history");
+    }
+
+    internal async Task VerifyMultipleUiAsync(string fixturePath, Action<string> passed)
+    {
+        void Check(bool result, string message)
+        {
+            if (!result) throw new InvalidOperationException(message);
+            passed("PASS: " + message);
+        }
+        preview = false;
+        timer.Start();
+        string directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ProcessSentinel-multi-" + Guid.NewGuid().ToString("N"));
+        var programs = new List<SuspendedProgram>();
+        var targets = new List<System.Diagnostics.Process>();
+        try
+        {
+            for (int i = 0; i < MaximumConcurrentSessions; i++)
+            {
+                var program = SuspendedProgram.Create(fixturePath, "--fixture-ipv4 \"" + System.IO.Path.Combine(directory, "target-" + i) + "\"");
+                programs.Add(program);
+                targets.Add(System.Diagnostics.Process.GetProcessById(program.Id));
+                await BeginAsync(ProcessCatalog.Get(program.Id), program: null);
+                Check(client?.Running == true, $"target {i + 1} started an independent collector while previous sessions remained active: {StatusText.Text}");
+            }
+            Check(sessions.Count == 4 && sessions.All(x => x.Client.Running), "four root programs are monitored concurrently");
+            var first = sessions[0];
+            var second = sessions[1];
+            await BeginAsync(first.Root, null);
+            Check(sessions.Count == 4 && selectedSession == first, "re-adding a monitored root selects its existing session");
+            await BeginAsync(first.Root with { StartTimeUtcTicks = first.Root.StartTimeUtcTicks + 1 }, null);
+            Check(sessions.Count == 4 && sessions.All(x => x.Client.Running), "concurrency limit rejects an extra session without disrupting existing collectors");
+            programs[0].Resume();
+            await targets[0].WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(25));
+            Check(targets[0].ExitCode == 0, "first benign fixture completes normally");
+            await Task.Delay(1500);
+            await StopAsync();
+            Check(!first.Client.Running && sessions.Skip(1).All(x => x.Client.Running) && !targets[1].HasExited,
+                "stopping the current session leaves three collectors and the other target programs running");
+
+            // An exited root is a deterministic startup failure; it must not stop the other collectors.
+            await BeginAsync(first.Root, null);
+            Check(selectedSession is { } failed && !failed.Client.Running && !string.IsNullOrEmpty(failed.Client.Error)
+                && sessions.Skip(1).Take(3).All(x => x.Client.Running), "failed target startup leaves other monitoring sessions intact");
+            await RemoveSessionAsync();
+            Check(sessions.Count == 4, "failed session can be removed without losing other session records");
+
+            SessionPicker.SelectedItem = second;
+            Check(!monitoredProcesses.Any(x => x.Process.Id == first.Root.Id) && monitoredProcesses.Any(x => x.Process.Id == second.Root.Id),
+                "switching the bound process grid isolates the selected target's roster");
+            programs[1].Resume();
+            await targets[1].WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(25));
+            Check(targets[1].ExitCode == 0, "second benign fixture completes normally after the first collector stopped");
+            await Task.Delay(1500);
+            Tick();
+            Check(second.Client.Total > 1 && activities.Any(x => x.ProcessId == second.Root.Id)
+                && !activities.Any(x => x.ProcessId == first.Root.Id), "other session continues receiving real events into the bound grid after selective stop");
+            await StopAllAsync();
+            Check(sessions.All(x => !x.Client.Running) && !targets[2].HasExited && !targets[3].HasExited,
+                "stop all stops every collector while leaving unstarted targets alive");
+            foreach (var session in sessions)
+            {
+                while (session.Client.TryTake(out var item)) session.Retain(item!);
+                Check(string.IsNullOrEmpty(session.Client.Error) && session.Client.QueueLost == 0 && session.Client.EtwLost == 0,
+                    $"PID {session.Root.Id}: clean completion with zero reported ETW or queue loss");
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                var session = sessions[i];
+                var events = EvidenceJournal.ReadEvents(session.Client.JournalPath).ToArray();
+                string ownDirectory = System.IO.Path.Combine(directory, "target-" + i);
+                string otherDirectory = System.IO.Path.Combine(directory, "target-" + (1 - i));
+                Check(events.Any(x => x.Kind == ActivityKind.File && x.Operation == "写入" && x.Target.Contains(ownDirectory))
+                    && events.Any(x => x.Kind == ActivityKind.Network && x.Bytes > 0)
+                    && events.Any(x => x.Kind == ActivityKind.Registry && x.Operation == "设置值")
+                    && events.Any(x => x.Kind == ActivityKind.Process && x.Operation == "启动"),
+                    $"PID {session.Root.Id}: separate journal contains file, network, registry and child process activity");
+                Check(events.Length == session.Client.Total && !events.Any(x => x.Target.Contains(otherDirectory))
+                    && !events.Any(x => x.ProcessId == sessions[1 - i].Root.Id), $"PID {session.Root.Id}: journal drains fully and excludes the other independent target");
+                passed("Evidence: " + session.Client.JournalPath);
+            }
+            SessionPicker.SelectedItem = first;
+            Check(activities.Any(x => x.ProcessId == first.Root.Id) && !activities.Any(x => x.ProcessId == second.Root.Id)
+                && monitoredProcesses.Any(x => x.IsRoot && !x.IsRunning), "stopped session history and exited root remain available after switching back");
+            // Leave two collectors active to verify the normal Closing cleanup path too.
+            for (int i = 2; i < 4; i++) await BeginAsync(ProcessCatalog.Get(programs[i].Id), null);
+            Check(sessions.Count(x => x.Client.Running) == 2, "two collectors are active before the window close cleanup test");
+            var pendingStop = StopAsync();
+            await CloseForDiagnosticsAsync();
+            await pendingStop;
+            Check(sessions.Count == 0 && client is null, "closing during a pending stop disposes every monitoring session without concurrent cleanup");
+            Check(!EtwMonitor.IsAdministrator(), "multi-session WPF test ran with ordinary user permissions");
+        }
+        finally
+        {
+            timer.Stop();
+            if (sessions.Count > 0) await StopAllAsync();
+            foreach (var program in programs) program.Dispose();
+            foreach (var target in targets) target.Dispose();
+            if (System.IO.Directory.Exists(directory)) System.IO.Directory.Delete(directory, true);
+        }
     }
 
     internal async Task VerifyLiveUiAsync(ProcessInfo root, Action<string> passed)

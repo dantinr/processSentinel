@@ -44,3 +44,19 @@ The UI now lists the root and all tracked descendants in a separate process tab,
 The collector plumbing probe now uses an IPv4-only fixture and verifies the fixture's exit code. This machine currently rejects IPv6 loopback ConnectAsync with SocketException 10013; the original full ETW `--integration` test retains its IPv6 checks and was not rerun successfully for 0.1.2. This validation does not claim renewed IPv6 coverage.
 
 Evidence: `artifacts/process-roster-packaged-core-results.txt`, `artifacts/process-roster-packaged-ui-results.txt`, `artifacts/process-roster-collector-final-results.txt`, and `artifacts/process-roster-preview.png`. The 0.1.2 distribution was published to a separate directory while the previous UI remained open.
+
+## 0.1.3: concurrent monitoring sessions
+
+One WPF window now supports up to four root programs concurrently, each with an independent ordinary UI client, elevated collector, process roster, counters and journal. Switching the selected session restores its retained history while all other clients continue receiving and persisting events. Each session retains its own newest 5,000 UI events. Exited or stopped sessions remain available until explicitly removed from the view; removal preserves their disk journals.
+
+- Release build and self-contained publish: zero warnings and zero errors.
+- Core/self-test: **41 checks passed**.
+- Bound WPF regression: **21 checks passed**, retaining the prior event/roster tests and adding separate session history, independent retention, switching back and stopped-session removal.
+- Real ordinary WPF UI with four concurrent elevated collectors: **27 checks passed** in the final self-contained package. Verified duplicate-root reuse, concurrency limit, selective stop, startup-failure isolation, continued events in another session, separate bound process rosters, separate complete journals, stop-all and unchanged suspended test targets.
+- Both executing IPv4 fixtures generated file writes, network bytes, registry value changes and child-process starts in their own journals. Neither journal included the other independent root or its test directory. All four collectors reported zero ETW or queue loss and no receive errors.
+- Closing the window with two collectors active while a selective stop was pending completed normally: closing waits for the existing stop/removal operation before disposing clients, preventing concurrent cleanup.
+- The two-program process-tab preview was rendered and visually inspected at 1440 × 960. It is explicitly marked as sample data.
+
+Evidence: `artifacts/multiple-core-results.txt`, `artifacts/multiple-packaged-ui-results.txt`, `artifacts/multiple-packaged-final-results.txt`, and `artifacts/multiple-preview.png`. The portable app and ZIP are in `Releases/ProcessSentinel-0.1.3-win-x64/` and `Releases/ProcessSentinel-0.1.3-win-x64.zip`.
+
+The live tests use only temporary IPv4 fixtures created by the diagnostics, including suspended roots for deterministic startup and stop checks. They do not establish new IPv6 coverage, sustained multi-program load capacity, or compatibility beyond this machine. Overlapping descendant scopes can intentionally produce the same event in different journals. No combined all-program event or total-count view is implemented.
