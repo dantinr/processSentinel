@@ -98,3 +98,13 @@ The top toolbar now contains Settings, About and the existing usage help. Settin
 - VERSION remains 0.1.4; output updated only in the fixed development directory. No formal package or new release directory was generated.
 
 Evidence: `artifacts/toolbar-build-results.txt`, `artifacts/toolbar-preview.png`, `artifacts/settings-preview.png` and `artifacts/about-preview.png`. These checks cover the UI build, existing regression behavior and visual layout; elevated capture was not rerun for these UI changes.
+
+## Menu bar
+
+The toolbar buttons were replaced with a native WPF menu above the application banner: Tools → Settings, and Help → Usage / About. Existing dialog handlers and the settings availability guard remain connected. The menu provides Alt+T and Alt+H access keys.
+
+- Daily build and publish: zero warnings/errors, **60 core checks** and **23 bound WPF checks** passed.
+- The 1440 × 960 process-tab preview was rendered and visually inspected; the menu and all three sample process roles are visible without clipping.
+- VERSION remains 0.1.4; the fixed development output was updated without formal release packaging.
+
+Evidence: `artifacts/menu-build-results.txt` and `artifacts/menu-preview.png`.

@@ -173,7 +173,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = available;
         ProcessList.IsEnabled = available;
         IncludeChildren.IsEnabled = available;
-        SettingsButton.IsEnabled = available;
+        SettingsMenuItem.IsEnabled = available;
         SessionPicker.IsEnabled = available;
         UpdateSessionSummary();
     }
