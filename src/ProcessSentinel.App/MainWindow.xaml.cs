@@ -30,6 +30,9 @@ public partial class MainWindow : Window
         activityView = CollectionViewSource.GetDefaultView(activities);
         activityView.Filter = MatchActivity;
         EventGrid.ItemsSource = activityView;
+        monitoredProcessView = CollectionViewSource.GetDefaultView(monitoredProcesses);
+        monitoredProcessView.Filter = MatchMonitoredProcess;
+        MonitoredProcessGrid.ItemsSource = monitoredProcessView;
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background, (_, _) => Tick(), Dispatcher);
         Loaded += async (_, _) => { if (!preview) await RefreshProcesses(); };
     }
@@ -92,6 +95,7 @@ public partial class MainWindow : Window
             if (client is not null) await client.DisposeAsync();
             client = new MonitorClient();
             activities.Clear();
+            ClearMonitoredProcesses();
             ResetCounters();
             TargetTitle.Text = process.Label;
             TargetPath.Text = process.PathText;
@@ -146,6 +150,9 @@ public partial class MainWindow : Window
         var batch = new List<Activity>(600);
         for (int i = 0; i < 600 && client.TryTake(out var value); i++) batch.Add(value!);
         AppendActivityBatch(batch);
+        var snapshot = client.Processes;
+        if (!ReferenceEquals(displayedProcessSnapshot, snapshot)) ApplyProcessSnapshot(snapshot);
+        UpdateProcessSummary();
         TotalText.Text = client.Total.ToString("N0");
         TrafficText.Text = FormatBytes(client.Sent + client.Received);
         TrafficDetail.Text = $"↑ {FormatBytes(client.Sent)}   ↓ {FormatBytes(client.Received)}";
@@ -231,7 +238,7 @@ public partial class MainWindow : Window
         Process.Start(new ProcessStartInfo("explorer.exe", "\"" + directory + "\"") { UseShellExecute = true });
     }
     private void Help_Click(object sender, RoutedEventArgs e) => MessageBox.Show(this,
-        "1. 选择进程后点击“开始监控”，或选择 .exe 启动并监控。\n2. 允许 Windows UAC 提升采集器的权限；界面和新启动的目标仍使用当前权限。\n3. 按类别、关键词或“只看风险提示”筛选，点击记录查看证据。\n4. 日志自动保存，可导出全部 JSONL / CSV。停止监控不会结束已运行的目标。\n\n覆盖：文件操作、TCP/UDP 端点与传输字节、注册表、子进程、模块加载。\n限制：只记录监控开始后的事件；无法保证观察所有行为，不读取 HTTPS 内容、文件内容或注册表值，不检测内存注入。文件操作默认是请求，不能视为已成功。\n\n“需复核 / 高关注”表示行为线索，不能直接认定恶意；没有提示也不能证明安全。ETW 或队列丢失会明确显示。\n\nUAC 需要使用同一个 Windows 用户；换用其他管理员账户无法连接采集器。",
+        "1. 选择进程后点击“开始监控”，或选择 .exe 启动并监控。\n2. 允许 Windows UAC 提升采集器的权限；界面和新启动的目标仍使用当前权限。\n3. “监控进程”显示目标及全部被跟踪子进程，可按名称、PID 或路径搜索。\n4. 按类别、关键词或“只看风险提示”筛选行为，点击记录查看证据。\n5. 日志自动保存，可导出全部 JSONL / CSV。停止监控不会结束已运行的目标。\n\n覆盖：文件操作、TCP/UDP 端点与传输字节、注册表、子进程、模块加载。\n限制：只记录监控开始后的事件；无法保证观察所有行为，不读取 HTTPS 内容、文件内容或注册表值，不检测内存注入。文件操作默认是请求，不能视为已成功。\n\n“需复核 / 高关注”表示行为线索，不能直接认定恶意；没有提示也不能证明安全。ETW 或队列丢失会明确显示。\n\nUAC 需要使用同一个 Windows 用户；换用其他管理员账户无法连接采集器。",
         "行为哨兵 · 第一版使用说明", MessageBoxButton.OK, MessageBoxImage.Information);
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
@@ -283,6 +290,9 @@ public partial class MainWindow : Window
     {
         preview = true;
         ProcessInfo[] list = [new(8420, 2400, "sample-app.exe", @"D:\Apps\Sample\sample-app.exe", 1), new(13512, 8420, "powershell.exe", "", 1), new(6100, 1, "explorer.exe", "", 1), new(9044, 1, "msedge.exe", "", 1), new(9048, 9044, "msedge.exe", "", 1), new(4500, 1, "notepad.exe", "", 1)];
+        long previewStart = DateTime.UtcNow.AddMinutes(-15).Ticks;
+        list[0] = list[0] with { StartTimeUtcTicks = previewStart };
+        list[1] = list[1] with { StartTimeUtcTicks = previewStart + TimeSpan.TicksPerSecond };
         ProcessList.ItemsSource = list;
         ProcessList.SelectedIndex = 0;
         ProcessCount.Text = "示例进程 · 界面预览";
@@ -290,6 +300,7 @@ public partial class MainWindow : Window
         TargetPath.Text = @"D:\Apps\Sample\sample-app.exe";
         RunBadge.Text = "●  示例数据预览";
         TotalText.Text = "1,284"; TrafficText.Text = "2.4 MB"; TrafficDetail.Text = "↑ 420 KB   ↓ 2 MB"; FileText.Text = "926 / 184"; AlertText.Text = "3"; ProcessStat.Text = "2 个存活目标进程";
+        ApplyProcessSnapshot([new(list[0], true, true), new(list[1] with { Path = @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" }, false, true)]);
         var samples = new[] {
             new Activity { Kind = ActivityKind.File, Operation = "读取", Target = @"C:\Users\demo\AppData\Local\Google\Chrome\User Data\Default\Login Data", Detail = "请求读取 4,096 字节；未确认完成状态。" },
             new Activity { Kind = ActivityKind.Network, Operation = "连接", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 只记录端点，不读取通信内容。" },

@@ -18,26 +18,7 @@ public static class ProcessCatalog
             do
             {
                 var id = (int)item.ProcessId;
-                string path = "";
-                long start = 0;
-                try
-                {
-                    using var process = Process.GetProcessById(id);
-                    start = process.StartTime.ToUniversalTime().Ticks;
-                    var handle = OpenProcess(0x1000, false, id);
-                    if (handle != IntPtr.Zero)
-                    {
-                        try
-                        {
-                            var buffer = new char[32768];
-                            var length = buffer.Length;
-                            if (QueryFullProcessImageName(handle, 0, buffer, ref length)) path = new string(buffer, 0, length);
-                        }
-                        finally { CloseHandle(handle); }
-                    }
-                }
-                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or ArgumentException or NotSupportedException) { }
-                entries.Add(new(id, (int)item.ParentProcessId, item.ExeFile ?? "", path, start));
+                entries.Add(ReadDetails(new(id, (int)item.ParentProcessId, item.ExeFile ?? "", "", 0)));
             } while (Process32Next(snapshot, ref item));
         }
         finally { CloseHandle(snapshot); }
@@ -46,6 +27,29 @@ public static class ProcessCatalog
 
     public static ProcessInfo Get(int id) => Snapshot().FirstOrDefault(x => x.Id == id)
         ?? throw new InvalidOperationException("目标进程已退出，请刷新进程列表。");
+
+    public static ProcessInfo ReadDetails(ProcessInfo value)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(value.Id);
+            value = value with { StartTimeUtcTicks = process.StartTime.ToUniversalTime().Ticks };
+            var handle = OpenProcess(0x1000, false, value.Id);
+            if (handle != IntPtr.Zero)
+            {
+                try
+                {
+                    var buffer = new char[32768];
+                    var length = buffer.Length;
+                    if (QueryFullProcessImageName(handle, 0, buffer, ref length))
+                        value = value with { Path = new string(buffer, 0, length) };
+                }
+                finally { CloseHandle(handle); }
+            }
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or ArgumentException or NotSupportedException) { }
+        return value;
+    }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct ProcessEntry

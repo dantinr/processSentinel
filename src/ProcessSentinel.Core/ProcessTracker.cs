@@ -4,15 +4,28 @@ namespace ProcessSentinel.Core;
 public sealed class ProcessTracker
 {
     private readonly Dictionary<int, ProcessInfo> active = new();
+    private readonly Dictionary<(int Id, long Started), TrackedProcess> known = new();
     private readonly object gate = new();
     private readonly bool includeChildren;
+    private long revision = 1;
     public ProcessTracker(ProcessInfo root, bool includeChildren)
     {
         this.includeChildren = includeChildren;
         active[root.Id] = root;
+        known[(root.Id, root.StartTimeUtcTicks)] = new(root, true, true);
     }
     public int Count { get { lock (gate) return active.Count; } }
     public ProcessInfo? Find(int id) { lock (gate) return active.GetValueOrDefault(id); }
+    public ProcessSnapshot? GetSnapshot(long afterRevision = -1)
+    {
+        lock (gate)
+        {
+            if (revision <= afterRevision) return null;
+            return new(revision, known.Values.OrderByDescending(x => x.IsRoot)
+                .ThenBy(x => x.Process.Name, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Process.Id)
+                .ThenBy(x => x.Process.StartTimeUtcTicks).ToArray());
+        }
+    }
     public void Seed(IEnumerable<ProcessInfo> snapshot)
     {
         if (!includeChildren) return;
@@ -34,12 +47,29 @@ public sealed class ProcessTracker
             {
                 if (prior.StartTimeUtcTicks == process.StartTimeUtcTicks) return false;
                 active.Remove(process.Id);
+                MarkExited(prior);
             }
             if (!includeChildren || !active.TryGetValue(process.ParentId, out var parent)) return false;
             if (process.StartTimeUtcTicks <= 0 || process.StartTimeUtcTicks < parent.StartTimeUtcTicks) return false;
             active[process.Id] = process;
+            known[(process.Id, process.StartTimeUtcTicks)] = new(process, false, true);
+            revision++;
             return true;
         }
     }
-    public ProcessInfo? Stop(int id) { lock (gate) { active.Remove(id, out var process); return process; } }
+    public ProcessInfo? Stop(int id)
+    {
+        lock (gate)
+        {
+            if (!active.Remove(id, out var process)) return null;
+            MarkExited(process);
+            return process;
+        }
+    }
+    private void MarkExited(ProcessInfo process)
+    {
+        var identity = (process.Id, process.StartTimeUtcTicks);
+        known[identity] = known[identity] with { IsRunning = false };
+        revision++;
+    }
 }

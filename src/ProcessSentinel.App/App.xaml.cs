@@ -32,9 +32,10 @@ public partial class App : Application
             return;
         }
         var window = new MainWindow();
-        if (e.Args.Length == 2 && e.Args[0] == "--render-preview")
+        if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] == "--processes") && e.Args[0] == "--render-preview")
         {
             window.SetPreviewData();
+            if (e.Args.Length == 3) window.ShowProcessPreview();
             window.Width = 1440;
             window.Height = 960;
             window.Show();
@@ -65,12 +66,16 @@ public partial class App : Application
         try
         {
             await using var client = new MonitorClient();
-            using var suspended = SuspendedProgram.Create(fixturePath, "--fixture \"" + directory + "\"");
+            using var suspended = SuspendedProgram.Create(fixturePath, "--fixture-ipv4 \"" + directory + "\"");
             using var target = Process.GetProcessById(suspended.Id);
             await client.StartAsync(new(ProcessCatalog.Get(suspended.Id), true));
             lines.Add("PASS: ordinary UI client connected to elevated collector over user-only pipe");
+            if (!client.Processes.Any(x => x.IsRoot && x.Process.Id == suspended.Id && x.IsRunning))
+                throw new InvalidOperationException("Ready message did not include the suspended target in its process roster.");
+            lines.Add("PASS: initial process roster includes the target before it produces activity");
             suspended.Resume();
             await target.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20));
+            if (target.ExitCode != 0) throw new InvalidOperationException($"Collector fixture exited unexpectedly: 0x{target.ExitCode:X8}");
             await Task.Delay(1500);
             await client.StopAsync();
             if (!string.IsNullOrEmpty(client.Error)) throw new IOException(client.Error);
@@ -80,6 +85,15 @@ public partial class App : Application
             Verify(events.Any(x => x.Kind == ActivityKind.Network && x.Operation == "发送" && x.Bytes > 0), "network bytes delivered and persisted through real collector");
             Verify(events.Any(x => x.Kind == ActivityKind.Registry && x.Operation == "设置值" && x.Target.Contains("ProcessSentinelSelfTest", StringComparison.OrdinalIgnoreCase)), "registry path delivered and persisted through real collector");
             Verify(events.Any(x => x.Kind == ActivityKind.Process && x.Operation == "启动" && x.ProcessId != target.Id), "descendant tracked through real collector");
+            Verify(client.Processes.Any(x => x.IsRoot && x.Process.Id == target.Id && !x.IsRunning)
+                && client.Processes.Any(x => !x.IsRoot && x.Process.Name.Equals("cmd.exe", StringComparison.OrdinalIgnoreCase) && !x.IsRunning),
+                "final process roster retains the exited root and short-lived child");
+            string journalSnapshot = Path.Combine(directory, "journal-snapshot.jsonl");
+            client.CopyJournal(journalSnapshot);
+            var messages = File.ReadLines(journalSnapshot).Select(Protocol.Deserialize<WireMessage>).Where(x => x is not null).ToArray();
+            Verify(messages.First(x => x!.Type == "ready")!.Processes?.Any(x => x.IsRoot) == true
+                && messages.Last(x => x!.Type == "completed")!.Processes?.Count == client.Processes.Count,
+                "initial and final process roster snapshots are persisted to the journal");
             Verify(!client.Running && events.LongLength == client.Total, "graceful stop drains all pipe events to journal");
             Verify(client.QueueLost == 0 && client.EtwLost == 0, "probe reports zero ETW or collector-queue loss");
             Verify(!EtwMonitor.IsAdministrator(), "UI test ran with ordinary permissions");

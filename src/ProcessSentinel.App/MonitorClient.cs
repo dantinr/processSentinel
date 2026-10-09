@@ -21,6 +21,7 @@ public sealed class MonitorClient : IAsyncDisposable
     private readonly long[] kinds = new long[6];
     private long total, alerts, sent, received, displaySkipped, etwLost, queueLost;
     private int active;
+    private IReadOnlyList<TrackedProcess> processes = Array.Empty<TrackedProcess>();
     private volatile bool running;
     public string JournalPath { get; private set; } = "";
     public string Error { get; private set; } = "";
@@ -33,6 +34,7 @@ public sealed class MonitorClient : IAsyncDisposable
     public long EtwLost => Interlocked.Read(ref etwLost);
     public long QueueLost => Interlocked.Read(ref queueLost);
     public int ActiveProcesses => Volatile.Read(ref active);
+    public IReadOnlyList<TrackedProcess> Processes => Volatile.Read(ref processes);
     public long Count(ActivityKind kind) => Interlocked.Read(ref kinds[(int)kind]);
 
     public async Task StartAsync(MonitorRequest request)
@@ -70,10 +72,10 @@ public sealed class MonitorClient : IAsyncDisposable
                 var message = Protocol.Deserialize<WireMessage>(line);
                 if (message is null) continue;
                 journal!.Append(message);
-                if (message.Type == "ready") ready.TrySetResult();
                 if (message.Type == "error") throw new InvalidOperationException(message.Text);
                 if (message.Type == "completed") completed = true;
-                if (message.Type is "statistics" or "completed")
+                if (message.Processes is { } snapshot) Volatile.Write(ref processes, snapshot);
+                if (message.Type is "ready" or "statistics" or "completed")
                 {
                     Interlocked.Exchange(ref etwLost, message.EtwLost);
                     Interlocked.Exchange(ref queueLost, message.QueueLost);
@@ -89,6 +91,7 @@ public sealed class MonitorClient : IAsyncDisposable
                     if (Interlocked.Increment(ref pendingCount) <= 20000) pending.Enqueue(item);
                     else { Interlocked.Decrement(ref pendingCount); Interlocked.Increment(ref displaySkipped); }
                 }
+                if (message.Type == "ready") ready.TrySetResult();
                 if (lastFlush.ElapsedMilliseconds >= 1000) { journal.Flush(); lastFlush.Restart(); }
             }
             if (!ready.Task.IsCompleted) ready.TrySetException(new IOException("采集器提前退出。"));

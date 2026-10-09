@@ -34,10 +34,26 @@ public sealed record ProcessInfo(int Id, int ParentId, string Name, string Path,
 {
     [JsonIgnore] public string Label => $"{Name}  ·  PID {Id}";
     [JsonIgnore] public string PathText => string.IsNullOrEmpty(Path) ? "路径不可读取（权限限制或进程已退出）" : Path;
+    [JsonIgnore] public string StartTimeText => StartTimeUtcTicks > 0 && StartTimeUtcTicks <= DateTime.MaxValue.Ticks
+        ? new DateTime(StartTimeUtcTicks, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "未知";
+}
+
+public sealed record TrackedProcess(ProcessInfo Process, bool IsRoot, bool IsRunning)
+{
+    [JsonIgnore] public string RoleText => IsRoot ? "目标" : "子进程";
+    [JsonIgnore] public string StateText => IsRunning ? "运行中" : "已退出";
+    [JsonIgnore] public string PathText => string.IsNullOrEmpty(Process.Path) ? Process.PathText
+        : System.IO.Path.IsPathFullyQualified(Process.Path) ? Process.Path : $"{Process.Path}（完整路径未能读取）";
+}
+
+public sealed record ProcessSnapshot(long Revision, IReadOnlyList<TrackedProcess> Processes)
+{
+    public int ActiveCount => Processes.Count(x => x.IsRunning);
 }
 
 public sealed record MonitorRequest(ProcessInfo Root, bool IncludeChildren);
-public sealed record WireMessage(string Type, Activity? Event = null, string? Text = null, long EtwLost = 0, long QueueLost = 0, int ActiveProcesses = 0);
+public sealed record WireMessage(string Type, Activity? Event = null, string? Text = null, long EtwLost = 0, long QueueLost = 0, int ActiveProcesses = 0,
+    IReadOnlyList<TrackedProcess>? Processes = null);
 
 public static class Protocol
 {

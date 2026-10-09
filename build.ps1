@@ -1,7 +1,9 @@
-param([switch]$SkipTests)
+param([switch]$SkipTests, [switch]$NoRestore, [string]$OutputDirectory = (Join-Path $PSScriptRoot 'Releases\ProcessSentinel-win-x64'))
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
-dotnet build ProcessSentinel.slnx -c Release
+$restoreOptions = @()
+if ($NoRestore) { $restoreOptions = @('--no-restore') }
+dotnet build ProcessSentinel.slnx -c Release @restoreOptions
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 if (-not $SkipTests) {
     & '.\tests\ProcessSentinel.SelfTest\bin\Release\net10.0-windows\ProcessSentinel.SelfTest.exe'
@@ -12,12 +14,12 @@ if (-not $SkipTests) {
     Get-Content -LiteralPath $uiTestReport
     if ($uiTest.ExitCode -ne 0) { throw 'UI regression failed' }
 }
-$releaseDirectory = Join-Path $PSScriptRoot 'Releases\ProcessSentinel-win-x64'
-dotnet publish src\ProcessSentinel.App\ProcessSentinel.App.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory
+$releaseDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
+dotnet publish src\ProcessSentinel.App\ProcessSentinel.App.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory @restoreOptions
 if ($LASTEXITCODE -ne 0) { throw 'UI publish failed' }
-dotnet publish src\ProcessSentinel.Collector\ProcessSentinel.Collector.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory
+dotnet publish src\ProcessSentinel.Collector\ProcessSentinel.Collector.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory @restoreOptions
 if ($LASTEXITCODE -ne 0) { throw 'Collector publish failed' }
-dotnet publish tests\ProcessSentinel.SelfTest\ProcessSentinel.SelfTest.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory
+dotnet publish tests\ProcessSentinel.SelfTest\ProcessSentinel.SelfTest.csproj -c Release -r win-x64 --self-contained true -o $releaseDirectory @restoreOptions
 if ($LASTEXITCODE -ne 0) { throw 'Diagnostics publish failed' }
 Copy-Item -LiteralPath '.\README.md','.\THIRD-PARTY-NOTICES.md' -Destination $releaseDirectory -Force
 $noticesDirectory = Join-Path $releaseDirectory 'third-party'

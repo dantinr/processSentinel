@@ -20,7 +20,9 @@ try
     monitor.ActivityReceived += item => { if (!queue.Writer.TryWrite(new("event", Event: item))) Interlocked.Increment(ref queueLost); };
     try { monitor.Start(request); }
     catch (Exception ex) { await writer.WriteLineAsync(Protocol.Serialize(new WireMessage("error", Text: ex.Message))); return 4; }
-    await writer.WriteLineAsync(Protocol.Serialize(new WireMessage("ready", Text: "采集器就绪")));
+    var initialProcesses = monitor.GetProcessSnapshot()!;
+    await writer.WriteLineAsync(Protocol.Serialize(new WireMessage("ready", Text: "采集器就绪",
+        ActiveProcesses: initialProcesses.ActiveCount, Processes: initialProcesses.Processes)));
     var send = Task.Run(async () =>
     {
         await foreach (var message in queue.Reader.ReadAllAsync()) await writer.WriteLineAsync(Protocol.Serialize(message));
@@ -28,10 +30,16 @@ try
     var statistics = Task.Run(async () =>
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        long processRevision = initialProcesses.Revision;
         try
         {
             while (await timer.WaitForNextTickAsync(lifetime.Token))
-                queue.Writer.TryWrite(new("statistics", EtwLost: monitor.EventsLost, QueueLost: Interlocked.Read(ref queueLost), ActiveProcesses: monitor.ActiveProcesses));
+            {
+                var snapshot = monitor.GetProcessSnapshot(processRevision);
+                if (queue.Writer.TryWrite(new("statistics", EtwLost: monitor.EventsLost, QueueLost: Interlocked.Read(ref queueLost),
+                    ActiveProcesses: snapshot?.ActiveCount ?? monitor.ActiveProcesses, Processes: snapshot?.Processes)) && snapshot is not null)
+                    processRevision = snapshot.Revision;
+            }
         }
         catch (OperationCanceledException) { }
     });
@@ -55,7 +63,9 @@ try
         lifetime.Cancel();
         await statistics;
         try { await monitor.Completion.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
-        await queue.Writer.WriteAsync(new("completed", Text: "监控已结束", EtwLost: monitor.EventsLost, QueueLost: Interlocked.Read(ref queueLost), ActiveProcesses: monitor.ActiveProcesses)).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        var finalProcesses = monitor.GetProcessSnapshot()!;
+        await queue.Writer.WriteAsync(new("completed", Text: "监控已结束", EtwLost: monitor.EventsLost, QueueLost: Interlocked.Read(ref queueLost),
+            ActiveProcesses: finalProcesses.ActiveCount, Processes: finalProcesses.Processes)).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
         queue.Writer.TryComplete();
         await send.WaitAsync(TimeSpan.FromSeconds(10));
     }

@@ -11,7 +11,7 @@ int reportIndex = Array.IndexOf(args, "--report");
 using var reportWriter = reportIndex >= 0 && reportIndex + 1 < args.Length ? new StreamWriter(args[reportIndex + 1], false, new UTF8Encoding(false)) { AutoFlush = true } : null;
 if (reportWriter is not null) { Console.SetOut(reportWriter); Console.SetError(reportWriter); }
 
-if (args.Length == 2 && args[0] == "--fixture")
+if (args.Length == 2 && args[0] is "--fixture" or "--fixture-ipv4")
 {
     string directory = args[1];
     await Task.Delay(300);
@@ -37,7 +37,7 @@ if (args.Length == 2 && args[0] == "--fixture")
     using var udpSender = new UdpClient();
     await udpSender.SendAsync(payload, (IPEndPoint)udpReceiver.Client.LocalEndPoint!);
     await udpReceiver.ReceiveAsync();
-    if (Socket.OSSupportsIPv6)
+    if (Socket.OSSupportsIPv6 && args[0] == "--fixture")
     {
         var ipv6 = new TcpListener(IPAddress.IPv6Loopback, 0);
         ipv6.Start();
@@ -110,11 +110,25 @@ try
     var tracker = new ProcessTracker(root, true);
     tracker.Seed([new(12, 11, "grandchild.exe", "", 130), new(11, 10, "child.exe", "", 120), new(13, 10, "old.exe", "", 90), root]);
     Check(tracker.Count == 3 && tracker.Find(12) is not null && tracker.Find(13) is null, "unordered descendants with creation time checks");
+    var seededProcesses = tracker.GetSnapshot()!;
+    Check(seededProcesses.ActiveCount == 3 && seededProcesses.Processes.Single(x => x.IsRoot).Process == root
+        && seededProcesses.Processes.Any(x => x.Process.Id == 12), "process roster includes the root and idle seeded descendants");
+    Check(tracker.GetSnapshot(seededProcesses.Revision) is null, "unchanged process roster does not require another snapshot");
     Check(tracker.Stop(10) is not null && tracker.Find(12) is not null, "descendants survive root exit");
+    var exitedRoot = tracker.GetSnapshot(seededProcesses.Revision)!;
+    Check(exitedRoot.ActiveCount == 2 && !exitedRoot.Processes.Single(x => x.IsRoot).IsRunning
+        && seededProcesses.Processes.All(x => x.IsRunning), "root exit updates roster without mutating prior snapshots or losing descendants");
     Check(!tracker.Start(new(10, 1, "unrelated.exe", "", 200)) && tracker.Find(10) is null, "root PID reuse is not followed");
     Check(!tracker.Start(new(11, 1, "unrelated.exe", "", 300)) && tracker.Find(11) is null, "tracked child PID reuse removes old identity");
+    Check(tracker.GetSnapshot()!.Processes.Single(x => x.Process.Id == 11).IsRunning == false,
+        "unrelated PID reuse marks the previous tracked identity as exited");
+    Check(tracker.Start(new(11, 12, "new-child.exe", @"C:\Apps\new-child.exe", 400))
+        && tracker.GetSnapshot()!.Processes.Count(x => x.Process.Id == 11) == 2,
+        "related PID reuse retains separate old and new process identities");
     var single = new ProcessTracker(root, false);
     Check(!single.Start(new(11, 10, "child.exe", "", 120)) && single.Count == 1, "child toggle excludes descendants");
+    Check(single.GetSnapshot()!.Processes.Count == 1 && single.GetSnapshot()!.Processes[0].IsRoot,
+        "root-only monitoring roster excludes descendants");
     var catalog = ProcessCatalog.Snapshot();
     Check(catalog.Any(x => x.Id == Environment.ProcessId && x.StartTimeUtcTicks > 0 && File.Exists(x.Path)), "real Windows process snapshot");
 
@@ -138,6 +152,10 @@ try
         Check(EvidenceJournal.CsvCell(" =HYPERLINK(\"http://localhost\")").StartsWith("\"'"), "CSV formula injection is neutralized");
         var eventCopy = Protocol.Deserialize<WireMessage>(Protocol.Serialize(new WireMessage("event", Event: FileEvent("读取", @"C:\测试\文件.txt"))));
         Check(eventCopy?.Event?.Target == @"C:\测试\文件.txt", "Chinese event protocol roundtrip");
+        var rosterCopy = Protocol.Deserialize<WireMessage>(Protocol.Serialize(new WireMessage("ready",
+            ActiveProcesses: exitedRoot.ActiveCount, Processes: exitedRoot.Processes)));
+        Check(rosterCopy?.Processes?.Count == 3 && rosterCopy.Processes.Single(x => x.IsRoot).IsRunning == false
+            && rosterCopy.Processes.Any(x => x.Process.Id == 12 && x.IsRunning), "process roster protocol retains ancestry and exit state");
 
         string marker = Path.Combine(temp, "resumed.txt");
         using (var suspended = SuspendedProgram.Create(Path.Combine(Environment.SystemDirectory, "cmd.exe"), $"/c echo benign>\"{marker}\""))

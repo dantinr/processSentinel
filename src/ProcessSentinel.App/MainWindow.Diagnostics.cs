@@ -7,6 +7,12 @@ namespace ProcessSentinel.App;
 
 public partial class MainWindow
 {
+    internal void ShowProcessPreview()
+    {
+        MonitorTabs.SelectedIndex = 1;
+        MonitoredProcessGrid.SelectedIndex = 0;
+    }
+
     internal void PrepareForDiagnostics()
     {
         preview = true;
@@ -68,6 +74,39 @@ public partial class MainWindow
         AppendActivityBatch(saved);
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         Check(EventGrid.Items.Count == Math.Min(saved.Count, 5000), "clear and restart update the bound grid safely");
+
+        MonitorTabs.SelectedIndex = 1;
+        var rootProcess = new ProcessInfo(101, 1, "root.exe", @"C:\Apps\root.exe", DateTime.UtcNow.Ticks);
+        var idleChild = new ProcessInfo(102, 101, "idle-child.exe", @"C:\Apps\idle-child.exe", rootProcess.StartTimeUtcTicks + 1);
+        ApplyProcessSnapshot([new(rootProcess, true, true), new(idleChild, false, true)]);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        Check(MonitoredProcessGrid.Items.Count == 2 && monitoredProcesses.All(x => x.IsRunning),
+            "bound process grid includes a root and a child with no activity events");
+        MonitoredProcessGrid.SelectedItem = monitoredProcesses.Single(x => x.Process.Id == idleChild.Id);
+        monitoredProcessView.SortDescriptions.Add(new SortDescription("Process.Id", ListSortDirection.Descending));
+        var newChild = new ProcessInfo(103, 102, "new-child.exe", @"C:\Apps\new-child.exe", rootProcess.StartTimeUtcTicks + 2);
+        ApplyProcessSnapshot([new(rootProcess, true, true), new(idleChild, false, true), new(newChild, false, true)]);
+        Check(MonitoredProcessGrid.Items.Count == 3 && MonitoredProcessGrid.SelectedItem is TrackedProcess { Process.Id: 102 }
+            && DetailText.Text.Contains(idleChild.Path), "new descendants update the sorted roster while preserving selection and complete path");
+        LiveProcessesOnly.IsChecked = true;
+        ApplyProcessSnapshot([new(rootProcess, true, true), new(idleChild, false, false), new(newChild, false, true)]);
+        Check(MonitoredProcessGrid.Items.Count == 2 && monitoredProcesses.Count == 3 && monitoredProcesses.Single(x => x.Process.Id == 102).StateText == "已退出",
+            "process exit updates the live filter while retaining the exited row");
+        LiveProcessesOnly.IsChecked = false;
+        MonitoredProcessSearch.Text = newChild.Path;
+        Check(MonitoredProcessGrid.Items.Count == 1 && ((TrackedProcess)MonitoredProcessGrid.Items[0]).Process.Id == 103,
+            "process roster supports full-path search");
+        MonitoredProcessSearch.Clear();
+        MonitoredProcessGrid.SelectedItem = monitoredProcesses.Single(x => x.Process.Id == 102);
+        var reusedChild = idleChild with { StartTimeUtcTicks = rootProcess.StartTimeUtcTicks + 3, Name = "reused-pid.exe" };
+        ApplyProcessSnapshot([new(rootProcess, true, false), new(idleChild, false, false), new(newChild, false, true), new(reusedChild, false, true)]);
+        Check(monitoredProcesses.Count(x => x.Process.Id == 102) == 2 && MonitoredProcessGrid.SelectedItem is TrackedProcess selected
+            && selected.Process.StartTimeUtcTicks == idleChild.StartTimeUtcTicks && !selected.IsRunning,
+            "PID reuse keeps separate rows and preserves the selected process identity after parent exit");
+        ClearMonitoredProcesses();
+        Check(MonitoredProcessGrid.Items.Count == 0 && MonitoredProcessTab.Header.ToString()!.Contains("0"),
+            "restarting monitoring clears the previous process roster");
+        MonitorTabs.SelectedIndex = 0;
     }
 
     internal async Task VerifyLiveUiAsync(ProcessInfo root, Action<string> passed)
@@ -80,6 +119,15 @@ public partial class MainWindow
         try
         {
             await Task.Delay(2000);
+            var roster = client.Processes;
+            if (roster.Count == 0 || roster.Count(x => x.IsRunning) != client.ActiveProcesses
+                || !roster.Any(x => x.IsRoot && x.Process.Id == root.Id && x.Process.StartTimeUtcTicks == root.StartTimeUtcTicks))
+                throw new InvalidOperationException("Collector roster is missing the target or tracked descendants.");
+            MonitorTabs.SelectedIndex = 1;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (MonitoredProcessGrid.Items.Count != roster.Count) throw new InvalidOperationException("Collector process roster did not reach the bound grid.");
+            passed($"PASS: live process roster shows {roster.Count} tracked processes, including the original target, and agrees with collector count");
+            MonitorTabs.SelectedIndex = 0;
             KindFilter.SelectedIndex = 2;
             await Task.Delay(2000);
             EventSearch.Text = "127.0.0.1";

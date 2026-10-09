@@ -19,6 +19,7 @@ public sealed class EtwMonitor : IDisposable
     public event Action<Activity>? ActivityReceived;
     public Task Completion { get; private set; } = Task.CompletedTask;
     public int ActiveProcesses => tracker?.Count ?? 0;
+    public ProcessSnapshot? GetProcessSnapshot(long afterRevision = -1) => tracker?.GetSnapshot(afterRevision);
     public long EventsLost
     {
         get
@@ -65,11 +66,9 @@ public sealed class EtwMonitor : IDisposable
         kernel.ProcessStart += data =>
         {
             if (tracker!.Find(data.ParentID) is null && tracker.Find(data.ProcessID) is null) return;
-            long ticks = data.TimeStamp.ToUniversalTime().Ticks;
-            try { using var child = Process.GetProcessById(data.ProcessID); ticks = child.StartTime.ToUniversalTime().Ticks; } catch { }
             string path = data.ImageFileName;
-            var childInfo = new ProcessInfo(data.ProcessID, data.ParentID, Path.GetFileName(path), path, ticks);
-            if (tracker.Start(childInfo)) Record(data, ActivityKind.Process, "启动", path, $"父进程 PID {data.ParentID}\n命令行：{data.CommandLine}");
+            var childInfo = ProcessCatalog.ReadDetails(new(data.ProcessID, data.ParentID, Path.GetFileName(path), path, data.TimeStamp.ToUniversalTime().Ticks));
+            if (tracker.Start(childInfo)) Record(data, ActivityKind.Process, "启动", childInfo.Path, $"父进程 PID {data.ParentID}\n命令行：{data.CommandLine}");
         };
         kernel.ProcessStop += data =>
         {
