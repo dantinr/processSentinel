@@ -130,3 +130,16 @@ Settings now provides a log directory field, folder picker and reset-to-default 
 - VERSION remains 0.1.4. Updated executables are in `artifacts/dev/ProcessSentinel-win-x64/`; the running alternate development app was preserved. No formal release package was created.
 
 Evidence: `artifacts/log-directory-build-results.txt`, `artifacts/log-directory-probe-results.txt` and `artifacts/log-directory-settings-preview.png`. The isolated probe writes only its own diagnostic files, does not change user settings and does not start an elevated collector. This validates journal storage and UI layout without renewed ETW capture coverage.
+
+## Independent review panel and journal
+
+Each session now retains Attention/High events in an independent collection and writes a paired `.review.jsonl` journal in its configured directory. Review delivery bypasses the ordinary 20,000-event display queue. The review tab supports its own search, selection/evidence and full-session CSV/JSONL export. Clicking the top review counter opens this panel and clears its search. Ordinary 5,000-event retention does not remove review events. Review journals include session/roster/loss metadata but exclude ordinary activity events.
+
+- Final daily build and alternate development publish: zero warnings/errors; **63 core checks** and **31 bound WPF checks** passed.
+- Core checks verify Attention/High journal retention with 12,000 intervening ordinary events, session and loss metadata, and review-only live snapshot/CSV export.
+- New WPF checks verify early alerts survive ordinary history eviction, complete selected evidence, independent filtering, sorted incoming alerts with preserved selection, retention of 6,003 review events, search for an old alert, and isolation/restoration across sessions.
+- A real named-pipe peer through the actual UI client's receive loop passed **6 additional checks**. Sent 20,050 ordinary events followed by Attention and High events; the ordinary display queue retained 20,000 and omitted 52, while the independent review queue retained both alerts. The full journal contains 20,052 activity events and the paired review journal contains exactly two. Review export retains evidence and original loss metadata, and normal stop retains the log. The peer was a diagnostic fixture, not an elevated ETW collector.
+- The final 1440 × 960 review preview was rendered and visually inspected; all three sample alerts, the count, search, card entry, evidence and export control are visible.
+- VERSION remains 0.1.4. Output is `artifacts/dev-alternate/ProcessSentinel-win-x64/`, preserving the user's running default development app and current monitoring. No formal release package was generated. Existing old-version sessions are not retroactively updated; their original logs remain intact.
+
+Evidence: `artifacts/review-build-results.txt`, `artifacts/review-pipe-probe-results.txt` and `artifacts/review-preview.png`. Review memory usage grows with retained risk records until the session is removed. These checks validate UI retention, pipe delivery and persistence; no new elevated ETW capture was requested.

@@ -17,8 +17,10 @@ public sealed class MonitorClient : IAsyncDisposable
     private StreamWriter? commands;
     private Task? receive;
     private EvidenceJournal? journal;
+    private EvidenceJournal? reviewJournal;
     private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentQueue<Activity> pending = new();
+    private readonly ConcurrentQueue<Activity> pendingReview = new();
     private int pendingCount;
     private readonly long[] kinds = new long[6];
     private long total, alerts, sent, received, displaySkipped, etwLost, queueLost;
@@ -26,6 +28,7 @@ public sealed class MonitorClient : IAsyncDisposable
     private IReadOnlyList<TrackedProcess> processes = Array.Empty<TrackedProcess>();
     private volatile bool running;
     public string JournalPath { get; private set; } = "";
+    public string ReviewJournalPath { get; private set; } = "";
     public string JournalDirectory { get; }
     public string Error { get; private set; } = "";
     public bool Running => running;
@@ -64,8 +67,13 @@ public sealed class MonitorClient : IAsyncDisposable
     private void CreateJournal(MonitorRequest request, string id)
     {
         string path = Path.Combine(JournalDirectory, $"{DateTime.Now:yyyyMMdd-HHmmss}-{request.Root.Id}-{id[..8]}.jsonl");
-        journal = new(path, request);
+        string reviewPath = Path.ChangeExtension(path, ".review.jsonl");
+        var full = new EvidenceJournal(path, request);
+        try { reviewJournal = new(reviewPath, request, reviewOnly: true); }
+        catch { full.Dispose(); throw; }
+        journal = full;
         JournalPath = path;
+        ReviewJournalPath = reviewPath;
     }
 
     private async Task ReceiveAsync()
@@ -80,6 +88,7 @@ public sealed class MonitorClient : IAsyncDisposable
                 var message = Protocol.Deserialize<WireMessage>(line);
                 if (message is null) continue;
                 journal!.Append(message);
+                reviewJournal!.Append(message);
                 if (message.Type == "error") throw new InvalidOperationException(message.Text);
                 if (message.Type == "completed") completed = true;
                 if (message.Processes is { } snapshot) Volatile.Write(ref processes, snapshot);
@@ -91,16 +100,10 @@ public sealed class MonitorClient : IAsyncDisposable
                 }
                 if (message.Event is { } item)
                 {
-                    Interlocked.Increment(ref total);
-                    Interlocked.Increment(ref kinds[(int)item.Kind]);
-                    if (item.Risk != RiskLevel.None) Interlocked.Increment(ref alerts);
-                    if (item.Kind == ActivityKind.Network && item.Operation == "发送") Interlocked.Add(ref sent, item.Bytes);
-                    if (item.Kind == ActivityKind.Network && item.Operation == "接收") Interlocked.Add(ref received, item.Bytes);
-                    if (Interlocked.Increment(ref pendingCount) <= 20000) pending.Enqueue(item);
-                    else { Interlocked.Decrement(ref pendingCount); Interlocked.Increment(ref displaySkipped); }
+                    RecordActivity(item);
                 }
                 if (message.Type == "ready") ready.TrySetResult();
-                if (lastFlush.ElapsedMilliseconds >= 1000) { journal.Flush(); lastFlush.Restart(); }
+                if (lastFlush.ElapsedMilliseconds >= 1000) { FlushJournals(); lastFlush.Restart(); }
             }
             if (!ready.Task.IsCompleted) ready.TrySetException(new IOException("采集器提前退出。"));
             else if (!completed) Error = "采集器意外断开，日志可能不完整。";
@@ -114,10 +117,31 @@ public sealed class MonitorClient : IAsyncDisposable
         finally
         {
             running = false;
-            try { journal?.Flush(); } catch (Exception ex) { Error = "日志保存失败：" + ex.Message; }
+            try { FlushJournals(); } catch (Exception ex) { Error = "日志保存失败：" + ex.Message; }
             pipe?.Dispose(); // EOF/errors also terminate the privileged collector via its pipe watcher.
         }
     }
+    private void RecordActivity(Activity item)
+    {
+        Interlocked.Increment(ref total);
+        Interlocked.Increment(ref kinds[(int)item.Kind]);
+        if (item.Risk != RiskLevel.None)
+        {
+            Interlocked.Increment(ref alerts);
+            // Review events bypass the bounded ordinary display queue.
+            pendingReview.Enqueue(item);
+        }
+        if (item.Kind == ActivityKind.Network && item.Operation == "发送") Interlocked.Add(ref sent, item.Bytes);
+        if (item.Kind == ActivityKind.Network && item.Operation == "接收") Interlocked.Add(ref received, item.Bytes);
+        if (Interlocked.Increment(ref pendingCount) <= 20000) pending.Enqueue(item);
+        else { Interlocked.Decrement(ref pendingCount); Interlocked.Increment(ref displaySkipped); }
+    }
+    private void FlushJournals()
+    {
+        try { journal?.Flush(); }
+        finally { reviewJournal?.Flush(); }
+    }
+    public bool TryTakeReview(out Activity? value) => pendingReview.TryDequeue(out value);
     public bool TryTake(out Activity? value)
     {
         if (!pending.TryDequeue(out value)) return false;
@@ -144,9 +168,10 @@ public sealed class MonitorClient : IAsyncDisposable
         lifetime.Cancel();
         try { commands?.Dispose(); } catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
         pipe?.Dispose();
-        journal?.Dispose();
-        lifetime.Dispose();
+        try { journal?.Dispose(); }
+        finally { try { reviewJournal?.Dispose(); } finally { lifetime.Dispose(); } }
     }
     public void CopyJournal(string destination) => journal?.CopyTo(destination);
+    public void CopyReviewJournal(string destination) => (reviewJournal ?? throw new InvalidOperationException("尚未创建复核日志。")).CopyTo(destination);
     public void CancelStartup() => lifetime.Cancel();
 }

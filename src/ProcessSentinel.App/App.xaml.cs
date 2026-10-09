@@ -43,7 +43,7 @@ public partial class App : Application
             _ = VerifyMultipleAsync(e.Args[1], e.Args[2], verifyFamily: true);
             return;
         }
-        if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] is "--processes" or "--settings" or "--about") && e.Args[0] == "--render-preview")
+        if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] is "--processes" or "--settings" or "--about" or "--review") && e.Args[0] == "--render-preview")
         {
             Window window;
             if (e.Args.Length == 3 && e.Args[2] == "--settings") window = new SettingsWindow(new());
@@ -52,7 +52,8 @@ public partial class App : Application
             {
                 var main = new MainWindow();
                 main.SetPreviewData();
-                if (e.Args.Length == 3) main.ShowProcessPreview();
+                if (e.Args.Length == 3 && e.Args[2] == "--review") main.ShowReviewPanel();
+                else if (e.Args.Length == 3) main.ShowProcessPreview();
                 main.Width = 1440;
                 main.Height = 960;
                 window = main;

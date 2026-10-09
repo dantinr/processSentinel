@@ -234,6 +234,28 @@ try
         File.AppendAllText(journalPath, "{\"Type\":\"event\",\"Event\":");
         Check(EvidenceJournal.ReadEvents(journalPath).Count() == 1, "interrupted journal tail is recoverable");
         Check(EvidenceJournal.CsvCell(" =HYPERLINK(\"http://localhost\")").StartsWith("\"'"), "CSV formula injection is neutralized");
+        string reviewPath = Path.Combine(temp, "evidence.review.jsonl");
+        using (var reviewJournal = new EvidenceJournal(reviewPath, new(root, true), reviewOnly: true))
+        {
+            var attention = FileEvent("读取", @"C:\Users\test\.ssh\id_rsa") with { Sequence = 71, Risk = RiskLevel.Attention, RuleId = "review-test", Reason = "review fixture" };
+            var high = attention with { Sequence = 72, Risk = RiskLevel.High };
+            reviewJournal.Append(new("event", Event: attention));
+            for (int i = 0; i < 12000; i++) reviewJournal.Append(new("event", Event: FileEvent("读取", @"C:\ordinary.txt") with { Sequence = 100 + i }));
+            reviewJournal.Append(new("event", Event: high));
+            reviewJournal.Append(new("statistics", EtwLost: 2, QueueLost: 3));
+            reviewJournal.CopyTo(Path.Combine(temp, "review-snapshot.jsonl"));
+            var reviewEvents = EvidenceJournal.ReadEvents(reviewPath).ToArray();
+            Check(reviewEvents.Length == 2 && reviewEvents[0].Sequence == 71 && reviewEvents[1].Risk == RiskLevel.High,
+                "review journal retains both risk levels while excluding 12,000 ordinary events");
+            using var reviewStream = new FileStream(reviewPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reviewReader = new StreamReader(reviewStream);
+            string reviewText = reviewReader.ReadToEnd();
+            Check(reviewText.Contains("\"JournalType\":\"review\"") && reviewText.Contains("\"EtwLost\":2") && reviewText.Contains("\"QueueLost\":3"),
+                "review journal identifies its scope and preserves session and loss metadata");
+            EvidenceJournal.ExportCsv(Path.Combine(temp, "review-snapshot.jsonl"), Path.Combine(temp, "review.csv"));
+            Check(File.ReadAllLines(Path.Combine(temp, "review.csv")).Length == 3 && File.ReadAllText(Path.Combine(temp, "review.csv")).Contains("review-test"),
+                "review-only live snapshot exports complete evidence without ordinary records");
+        }
         var eventCopy = Protocol.Deserialize<WireMessage>(Protocol.Serialize(new WireMessage("event", Event: FileEvent("读取", @"C:\测试\文件.txt"))));
         Check(eventCopy?.Event?.Target == @"C:\测试\文件.txt", "Chinese event protocol roundtrip");
         var rosterCopy = Protocol.Deserialize<WireMessage>(Protocol.Serialize(new WireMessage("ready",

@@ -30,6 +30,7 @@ public partial class MainWindow
         selectedSession = SessionPicker.SelectedItem as MonitorSession;
         client = selectedSession?.Client;
         activities.Clear();
+        BindReviewSession();
         ClearMonitoredProcesses();
         ResetCounters();
         DetailText.Text = "选择当前程序的行为记录或进程，查看完整信息。";
@@ -62,6 +63,8 @@ public partial class MainWindow
             session.Retain(value!);
             batch.Add(value!);
         }
+        for (int i = 0; i < 600 && session.Client.TryTakeReview(out var review); i++)
+            session.ReviewEvents.Add(review!);
         if (ReferenceEquals(selectedSession, session)) AppendActivityBatch(batch);
         if (!session.Starting && !session.Client.Running) session.Duration.Stop();
         session.UpdateLabel();

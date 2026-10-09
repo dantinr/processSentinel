@@ -6,16 +6,23 @@ public sealed class EvidenceJournal : IDisposable
 {
     private readonly StreamWriter writer;
     private readonly object gate = new();
+    private readonly bool reviewOnly;
     public string Path { get; }
-    public EvidenceJournal(string path, MonitorRequest request)
+    public EvidenceJournal(string path, MonitorRequest request, bool reviewOnly = false)
     {
         Path = path;
+        this.reviewOnly = reviewOnly;
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         writer = new(new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read), new UTF8Encoding(false));
-        writer.WriteLine(Protocol.Serialize(new { Type = "session", Started = DateTimeOffset.Now, Request = request, Version = Protocol.Version }));
+        writer.WriteLine(Protocol.Serialize(new { Type = "session", Started = DateTimeOffset.Now, Request = request, Version = Protocol.Version,
+            JournalType = reviewOnly ? "review" : "all" }));
         writer.Flush();
     }
-    public void Append(WireMessage message) { lock (gate) writer.WriteLine(Protocol.Serialize(message)); }
+    public void Append(WireMessage message)
+    {
+        if (reviewOnly && message.Event is { Risk: RiskLevel.None }) return;
+        lock (gate) writer.WriteLine(Protocol.Serialize(message));
+    }
     public void Flush() { lock (gate) writer.Flush(); }
     public void CopyTo(string destination)
     {

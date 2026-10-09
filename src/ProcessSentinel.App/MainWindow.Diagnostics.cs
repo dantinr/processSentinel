@@ -134,6 +134,42 @@ public partial class MainWindow
         SessionPicker.SelectedItem = first;
         Check(activities.Count == 1 && activities.Single().ProcessId == rootProcess.Id && second.Recent.Count == 5000,
             "switching back restores the original history without clearing another session");
+
+        var firstReview = firstEvent with { Sequence = 71, Risk = RiskLevel.Attention, Target = "review-first-only", Reason = "retained review evidence" };
+        var highReview = firstReview with { Sequence = 72, Risk = RiskLevel.High, Target = "review-high-only" };
+        first.ReviewEvents.Add(firstReview);
+        first.ReviewEvents.Add(highReview);
+        second.ReviewEvents.Add(secondEvent with { Risk = RiskLevel.Attention, Target = "review-second-only" });
+        for (int i = 0; i < 6000; i++) first.Retain(firstEvent with { Sequence = i, Risk = RiskLevel.None });
+        SessionPicker.SelectedItem = second;
+        SessionPicker.SelectedItem = first;
+        ShowReviewPanel();
+        Check(activities.Count == 5000 && ReviewGrid.Items.Count == 2 && first.ReviewEvents.Contains(firstReview),
+            "review panel retains early attention and high events after ordinary history eviction");
+        ReviewGrid.SelectedItem = firstReview;
+        Check(DetailText.Text.Contains(firstReview.Target) && DetailText.Text.Contains(firstReview.Reason),
+            "review selection shows full target and trigger evidence");
+        EventSearch.Text = "no ordinary matches";
+        RiskOnly.IsChecked = true;
+        Check(ReviewGrid.Items.Count == 2, "ordinary category and keyword filters do not hide independent review records");
+        EventSearch.Clear();
+        RiskOnly.IsChecked = false;
+        reviewView!.SortDescriptions.Add(new SortDescription(nameof(Activity.Sequence), ListSortDirection.Descending));
+        first.ReviewEvents.Add(highReview with { Sequence = 73 });
+        Check(ReferenceEquals(ReviewGrid.SelectedItem, firstReview) && ((Activity)ReviewGrid.Items[0]).Sequence == 73,
+            "sorted review panel accepts new alerts while preserving selected evidence");
+        for (int i = 0; i < 6000; i++) first.ReviewEvents.Add(highReview with { Sequence = 100 + i, Target = "review-volume-fixture" });
+        Check(ReviewGrid.Items.Count == 6003 && first.ReviewEvents.Contains(firstReview),
+            "review records have independent retention beyond the ordinary 5,000-event limit");
+        ReviewSearch.Text = firstReview.Target;
+        Check(ReviewGrid.Items.Count == 1 && ReferenceEquals(ReviewGrid.Items[0], firstReview),
+            "review search finds an old retained event after later alert traffic");
+        ReviewSearch.Clear();
+        SessionPicker.SelectedItem = second;
+        Check(ReviewGrid.Items.Count == 1 && ((Activity)ReviewGrid.Items[0]).Target == "review-second-only",
+            "switching sessions isolates the review panel from another application's alerts");
+        SessionPicker.SelectedItem = first;
+        Check(ReviewGrid.Items.Count == 6003, "returning to a session restores all independently retained review records");
         await RemoveSessionAsync();
         Check(sessions.Count == 1 && client == second.Client && activities.Count == 5000,
             "removing a stopped session selects another session and preserves its history");

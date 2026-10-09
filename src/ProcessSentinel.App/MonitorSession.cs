@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using ProcessSentinel.Core;
 using Activity = ProcessSentinel.Core.Activity;
@@ -17,6 +18,7 @@ internal sealed class MonitorSession(MonitorRequest request, string boundary = "
     public MonitorClient Client { get; } = new(logDirectory);
     public Stopwatch Duration { get; } = new();
     public Queue<Activity> Recent { get; } = new();
+    public ObservableCollection<Activity> ReviewEvents { get; } = new();
     public bool Starting { get; set; } = true;
     public string StartupError { get; set; } = "";
     public string Error => string.IsNullOrEmpty(StartupError) ? Client.Error : StartupError;

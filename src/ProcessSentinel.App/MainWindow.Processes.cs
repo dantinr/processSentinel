@@ -79,6 +79,7 @@ public partial class MainWindow
     {
         if (!ReferenceEquals(e.Source, MonitorTabs) || EventGrid is null || MonitoredProcessGrid is null) return;
         if (MonitorTabs.SelectedIndex == 1) ShowSelectedProcess();
+        else if (ReviewTab?.IsSelected == true) ReviewGrid_SelectionChanged(sender, e);
         else EventGrid_SelectionChanged(sender, e);
     }
     private void ShowSelectedProcess()

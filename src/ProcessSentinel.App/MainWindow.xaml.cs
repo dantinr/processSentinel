@@ -204,6 +204,7 @@ public partial class MainWindow : Window
         TrafficDetail.Text = $"↑ {FormatBytes(client.Sent)}   ↓ {FormatBytes(client.Received)}";
         FileText.Text = $"{client.Count(ActivityKind.File):N0} / {client.Count(ActivityKind.Registry):N0}";
         AlertText.Text = client.Alerts.ToString("N0");
+        UpdateReviewSummary();
         ProcessStat.Text = $"{client.ActiveProcesses} 个存活目标进程";
         EmptyState.Visibility = activityView.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         EmptyTitle.Text = client.Total > 0 ? "没有符合筛选条件的记录" : "等待第一条行为记录";
@@ -249,7 +250,12 @@ public partial class MainWindow : Window
     private void EventSearch_Changed(object sender, TextChangedEventArgs e) => Filter_Changed(sender, e);
     private void EventGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (ReviewTab?.IsSelected == true) return;
         if (EventGrid.SelectedItem is not Activity value) return;
+        ShowActivityEvidence(value);
+    }
+    private void ShowActivityEvidence(Activity value)
+    {
         DetailTitle.Text = $"{value.KindText} / {value.Operation} · {value.RiskText}{(string.IsNullOrEmpty(value.RuleId) ? "" : " · " + value.RuleId)}";
         DetailText.Text = $"{value.Time.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff}   #{value.Sequence}   {value.ProcessText}\n目标：{value.Target}\n{value.Evidence}";
     }
@@ -380,7 +386,13 @@ public partial class MainWindow : Window
             new Activity { Kind = ActivityKind.Network, Operation = "发送", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 1,460 字节" },
             new Activity { Kind = ActivityKind.File, Operation = "打开/创建", Target = @"D:\Apps\Sample\config.json", Detail = "ETW 请求事件，未确认完成状态。" }
         };
-        for (int i = 0; i < samples.Length; i++) activities.Add(RiskEngine.Evaluate(samples[i] with { Sequence = i + 1, Time = DateTimeOffset.Now.AddMilliseconds(i * 137), ProcessId = 8420, ProcessName = "sample-app.exe" }));
+        for (int i = 0; i < samples.Length; i++)
+        {
+            var item = RiskEngine.Evaluate(samples[i] with { Sequence = i + 1, Time = DateTimeOffset.Now.AddMilliseconds(i * 137), ProcessId = 8420, ProcessName = "sample-app.exe" });
+            activities.Add(item);
+            if (item.Risk != RiskLevel.None) previewSession.ReviewEvents.Add(item);
+        }
+        UpdateReviewSummary();
         EmptyState.Visibility = Visibility.Collapsed;
         EventGrid.SelectedIndex = 0;
         StopButton.IsEnabled = true;

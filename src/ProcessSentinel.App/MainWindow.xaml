@@ -70,7 +70,10 @@
           <Border Style="{StaticResource Card}" Padding="16,13" Margin="0,0,10,0"><StackPanel><TextBlock Text="捕获事件" Style="{StaticResource Caption}"/><TextBlock x:Name="TotalText" Text="0" FontSize="25" FontWeight="SemiBold" Margin="0,5,0,0"/><TextBlock x:Name="ProcessStat" Text="0 个存活目标进程" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></Border>
           <Border Style="{StaticResource Card}" Padding="16,13" Margin="0,0,10,0"><StackPanel><TextBlock Text="网络传输" Style="{StaticResource Caption}"/><TextBlock x:Name="TrafficText" Text="0 B" FontSize="25" FontWeight="SemiBold" Margin="0,5,0,0"/><TextBlock x:Name="TrafficDetail" Text="↑ 0 B   ↓ 0 B" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></Border>
           <Border Style="{StaticResource Card}" Padding="16,13" Margin="0,0,10,0"><StackPanel><TextBlock Text="文件 / 注册表事件" Style="{StaticResource Caption}"/><TextBlock x:Name="FileText" Text="0 / 0" FontSize="25" FontWeight="SemiBold" Margin="0,5,0,0"/><TextBlock Text="记录操作和目标路径" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></Border>
-          <Border Style="{StaticResource Card}" Padding="16,13"><StackPanel><TextBlock Text="需要复核的事件" Style="{StaticResource Caption}"/><TextBlock x:Name="AlertText" Text="0" FontSize="25" Foreground="#B45309" FontWeight="SemiBold" Margin="0,5,0,0"/><TextBlock Text="行为线索 ≠ 恶意判定" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel></Border>
+          <Button Padding="16,13" HorizontalContentAlignment="Stretch" ToolTip="查看本会话独立保留的全部复核记录" Click="ShowReview_Click">
+            <Button.Template><ControlTemplate TargetType="Button"><Border x:Name="ReviewCard" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ReviewCard" Property="Background" Value="#FFFBEB"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Button.Template>
+            <StackPanel><TextBlock Text="需要复核的事件" Style="{StaticResource Caption}"/><TextBlock x:Name="AlertText" Text="0" FontSize="25" Foreground="#B45309" FontWeight="SemiBold" Margin="0,5,0,0"/><TextBlock Text="点击查看独立复核面板" Style="{StaticResource Caption}" Margin="0,4,0,0"/></StackPanel>
+          </Button>
         </UniformGrid>
         <Border Grid.Row="2" Style="{StaticResource Card}">
           <TabControl x:Name="MonitorTabs" BorderThickness="0" Background="Transparent" Padding="0" SelectionChanged="MonitorTabs_SelectionChanged">
@@ -120,6 +123,34 @@
                 <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{StaticResource Line}" Padding="15,9">
                   <TextBlock Text="包含没有行为记录的已跟踪进程；新进程自动加入，退出后保留最后状态。" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
                 </Border>
+              </Grid>
+            </TabItem>
+            <TabItem x:Name="ReviewTab" Header="需要复核（0）">
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Margin="16,14,16,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                  <TextBox x:Name="ReviewSearch" Style="{StaticResource SearchBox}" Tag="搜索复核记录的进程、路径、规则或原因" TextChanged="ReviewSearch_Changed"/>
+                  <Button x:Name="ExportReviewButton" Grid.Column="1" Content="导出复核日志" Margin="12,0,0,0" IsEnabled="False" Click="ExportReview_Click"/>
+                </Grid>
+                <TextBlock x:Name="ReviewCount" Grid.Row="1" Text="本会话独立保留 0 条 · 当前显示 0 条" Style="{StaticResource Caption}" Margin="16,9,16,12"/>
+                <DataGrid x:Name="ReviewGrid" Grid.Row="2" RowHeight="32" ColumnHeaderHeight="32" SelectionChanged="ReviewGrid_SelectionChanged">
+                  <DataGrid.ColumnHeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="Padding" Value="10,7"/></Style></DataGrid.ColumnHeaderStyle>
+                  <DataGrid.Columns>
+                    <DataGridTextColumn Header="时间" Binding="{Binding TimeText}" Width="112"/>
+                    <DataGridTextColumn Header="进程 / PID" Binding="{Binding ProcessText}" Width="180" ElementStyle="{StaticResource GridText}"/>
+                    <DataGridTextColumn Header="提示" Binding="{Binding RiskText}" Width="80"/>
+                    <DataGridTextColumn Header="操作" Binding="{Binding Operation}" Width="92"/>
+                    <DataGridTextColumn Header="目标" Binding="{Binding Target}" Width="*" MinWidth="140" ElementStyle="{StaticResource GridText}"/>
+                    <DataGridTextColumn Header="规则" Binding="{Binding RuleId}" Width="140" ElementStyle="{StaticResource GridText}"/>
+                  </DataGrid.Columns>
+                </DataGrid>
+                <Grid x:Name="ReviewEmptyState" Grid.Row="2" IsHitTestVisible="False" Background="White" Margin="0,40,0,0">
+                  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"><TextBlock x:Name="ReviewEmptyTitle" Text="尚无需要复核的事件" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="需复核和高关注记录会独立保留在这里" Style="{StaticResource Caption}" Margin="0,8,0,0"/></StackPanel>
+                </Grid>
+                <Border Grid.Row="3" BorderThickness="0,1,0,0" BorderBrush="{StaticResource Line}" Padding="15,9"><StackPanel>
+                  <TextBlock Text="复核记录独立保留；普通事件滚动不会清除。行为线索需要结合程序用途判断。" Style="{StaticResource Caption}"/>
+                  <TextBlock x:Name="ReviewLogPath" Text="开始新监控后，复核记录会自动保存到独立日志。" Style="{StaticResource Caption}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,5,0,0"/>
+                </StackPanel></Border>
               </Grid>
             </TabItem>
           </TabControl>
