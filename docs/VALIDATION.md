@@ -88,3 +88,13 @@ The root `VERSION` file is the version source for MSBuild and the build script. 
 - Default and `-Package -WhatIf` invocations resolve the respective fixed development and versioned release paths without building or generating artifacts. No formal package was created for this change.
 
 Evidence: `artifacts/build-workflow-results.txt` and `artifacts/build-workflow-releases-before.txt`. This validation covers build output and version propagation; no new elevated ETW test was run for the build-script changes.
+
+## Top toolbar, settings and about windows
+
+The top toolbar now contains Settings, About and the existing usage help. Settings stores the default program-tree scope and risk-only filter in the current user's local application data. Applying settings updates the current filter and the scope used by new sessions; existing session requests remain unchanged. Preview and regression modes use default options without writing user preferences.
+
+- Final daily build and self-contained publish: zero warnings and errors; **60 core checks** and **23 bound WPF checks** passed.
+- Rendered and visually inspected the 1440 × 960 main process-tab preview and both new dialog previews. The toolbar, full process column headings, all three sample process roles, settings controls and dialog buttons are visible without clipping.
+- VERSION remains 0.1.4; output updated only in the fixed development directory. No formal package or new release directory was generated.
+
+Evidence: `artifacts/toolbar-build-results.txt`, `artifacts/toolbar-preview.png`, `artifacts/settings-preview.png` and `artifacts/about-preview.png`. These checks cover the UI build, existing regression behavior and visual layout; elevated capture was not rerun for these UI changes.

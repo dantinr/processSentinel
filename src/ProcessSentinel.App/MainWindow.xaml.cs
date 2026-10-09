@@ -35,6 +35,9 @@ public partial class MainWindow : Window
         monitoredProcessView.Filter = MatchMonitoredProcess;
         MonitoredProcessGrid.ItemsSource = monitoredProcessView;
         SessionPicker.ItemsSource = sessions;
+        settings = AppSettings.Load(out string? settingsError);
+        ApplySettings(settings);
+        if (settingsError is not null) StatusText.Text = settingsError;
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background, (_, _) => Tick(), Dispatcher);
         Loaded += async (_, _) => { if (!preview) await RefreshProcesses(); };
     }
@@ -170,6 +173,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = available;
         ProcessList.IsEnabled = available;
         IncludeChildren.IsEnabled = available;
+        SettingsButton.IsEnabled = available;
         SessionPicker.IsEnabled = available;
         UpdateSessionSummary();
     }
@@ -338,6 +342,7 @@ public partial class MainWindow : Window
     public void SetPreviewData()
     {
         preview = true;
+        ApplySettings(new());
         ProcessInfo[] list = [new(8420, 2400, "sample-app.exe", @"D:\Apps\Sample\sample-app.exe", 1), new(13512, 8420, "powershell.exe", "", 1), new(6100, 1, "explorer.exe", "", 1), new(9044, 1, "msedge.exe", "", 1), new(9048, 9044, "msedge.exe", "", 1), new(4500, 1, "notepad.exe", "", 1)];
         long previewStart = DateTime.UtcNow.AddMinutes(-15).Ticks;
         list[0] = list[0] with { StartTimeUtcTicks = previewStart };

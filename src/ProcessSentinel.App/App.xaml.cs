@@ -43,31 +43,43 @@ public partial class App : Application
             _ = VerifyMultipleAsync(e.Args[1], e.Args[2], verifyFamily: true);
             return;
         }
-        var window = new MainWindow();
-        if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] == "--processes") && e.Args[0] == "--render-preview")
+        if ((e.Args.Length == 2 || e.Args.Length == 3 && e.Args[2] is "--processes" or "--settings" or "--about") && e.Args[0] == "--render-preview")
         {
-            window.SetPreviewData();
-            if (e.Args.Length == 3) window.ShowProcessPreview();
-            window.Width = 1440;
-            window.Height = 960;
-            window.Show();
-            window.Dispatcher.InvokeAsync(() =>
+            Window window;
+            if (e.Args.Length == 3 && e.Args[2] == "--settings") window = new SettingsWindow(new());
+            else if (e.Args.Length == 3 && e.Args[2] == "--about") window = new AboutWindow();
+            else
             {
-                try
-                {
-                    window.UpdateLayout();
-                    var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-                    bitmap.Render(window);
-                    var png = new PngBitmapEncoder();
-                    png.Frames.Add(BitmapFrame.Create(bitmap));
-                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(e.Args[1]))!);
-                    using var stream = File.Create(e.Args[1]);
-                    png.Save(stream);
-                }
-                finally { Shutdown(); }
-            }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var main = new MainWindow();
+                main.SetPreviewData();
+                if (e.Args.Length == 3) main.ShowProcessPreview();
+                main.Width = 1440;
+                main.Height = 960;
+                window = main;
+            }
+            RenderPreview(window, e.Args[1]);
         }
-        else window.Show();
+        else new MainWindow().Show();
+    }
+
+    private void RenderPreview(Window window, string path)
+    {
+        window.Show();
+        window.Dispatcher.InvokeAsync(() =>
+        {
+            try
+            {
+                window.UpdateLayout();
+                var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(window);
+                var png = new PngBitmapEncoder();
+                png.Frames.Add(BitmapFrame.Create(bitmap));
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+                using var stream = File.Create(path);
+                png.Save(stream);
+            }
+            finally { Shutdown(); }
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     private async Task VerifyCollectorAsync(string reportPath, string fixturePath)

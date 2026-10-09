@@ -17,6 +17,7 @@ public partial class MainWindow
     {
         preview = true;
         diagnostics = true;
+        ApplySettings(new());
         timer.Stop();
         ShowActivated = false;
         ShowInTaskbar = false;
