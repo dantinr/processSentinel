@@ -40,10 +40,24 @@ public sealed record ProcessInfo(int Id, int ParentId, string Name, string Path,
 
 public sealed record TrackedProcess(ProcessInfo Process, bool IsRoot, bool IsRunning, bool IsSelected = false, bool IsAncestor = false)
 {
+    public long OutboundBytes { get; init; }
+    [JsonIgnore] public string OutboundTrafficText => ByteSize.Format(OutboundBytes);
     [JsonIgnore] public string RoleText => IsSelected ? IsRoot ? "所选/主" : "所选" : IsRoot ? "主进程" : IsAncestor ? "父进程" : "子进程";
     [JsonIgnore] public string StateText => IsRunning ? "运行中" : "已退出";
     [JsonIgnore] public string PathText => string.IsNullOrEmpty(Process.Path) ? Process.PathText
         : System.IO.Path.IsPathFullyQualified(Process.Path) ? Process.Path : $"{Process.Path}（完整路径未能读取）";
+}
+
+public static class ByteSize
+{
+    public static string Format(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
+        double value = Math.Max(0, bytes);
+        int i = 0;
+        while (value >= 1024 && i < units.Length - 1) { value /= 1024; i++; }
+        return $"{value:0.#} {units[i]}";
+    }
 }
 
 public sealed record ProcessSnapshot(long Revision, IReadOnlyList<TrackedProcess> Processes)

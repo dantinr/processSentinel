@@ -145,6 +145,8 @@ public sealed class EtwMonitor : IDisposable
         if (tracker!.Find(data.ProcessID) is null) return;
         var remote = receive ? source : destination;
         var port = receive ? sourcePort : destinationPort;
+        // Count in the collector before event queues can omit records. Each process owns its bytes.
+        if (operation == "发送") tracker.RecordNetworkSend(data.ProcessID, bytes, destination.ToString());
         Record(data, ActivityKind.Network, operation, $"{Endpoint(source, sourcePort)} → {Endpoint(destination, destinationPort)}",
             $"{protocol} · {Math.Max(0, bytes):N0} 字节 · {(RiskEngine.IsLocalAddress(remote.ToString()) ? "本机 / 局域网 / 特殊地址" : "公网地址")}\n只记录端点和传输字节，不读取通信内容。",
             Math.Max(0, bytes), remoteAddress: remote.ToString(), remotePort: port);

@@ -22,6 +22,18 @@ public sealed class ProcessTracker
     }
     public int Count { get { lock (gate) return active.Count; } }
     public ProcessInfo? Find(int id) { lock (gate) return active.GetValueOrDefault(id); }
+    public void RecordNetworkSend(int id, long bytes, string destination)
+    {
+        if (bytes <= 0 || RiskEngine.IsLocalAddress(destination)) return;
+        lock (gate)
+        {
+            if (!active.TryGetValue(id, out var process)) return;
+            var identity = (id, process.StartTimeUtcTicks);
+            var current = known[identity];
+            known[identity] = current with { OutboundBytes = current.OutboundBytes + Math.Min(bytes, long.MaxValue - current.OutboundBytes) };
+            revision++;
+        }
+    }
     public ProcessSnapshot? GetSnapshot(long afterRevision = -1)
     {
         lock (gate)

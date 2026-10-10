@@ -105,6 +105,27 @@ public partial class MainWindow
         Check(monitoredProcesses.Count(x => x.Process.Id == 102) == 2 && MonitoredProcessGrid.SelectedItem is TrackedProcess selected
             && selected.Process.StartTimeUtcTicks == idleChild.StartTimeUtcTicks && !selected.IsRunning,
             "PID reuse keeps separate rows and preserves the selected process identity after parent exit");
+        ApplyProcessSnapshot([new(rootProcess, true, false), new(idleChild, false, false) { OutboundBytes = 1536 },
+            new(newChild, false, true) { OutboundBytes = 16 }, new(reusedChild, false, true)]);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        MonitoredProcessGrid.UpdateLayout();
+        var trafficColumn = MonitoredProcessGrid.Columns.Single(x => x.Header?.ToString() == "出网流量");
+        var exitedSender = monitoredProcesses.Single(x => x.Process.StartTimeUtcTicks == idleChild.StartTimeUtcTicks);
+        Check(trafficColumn.SortMemberPath == nameof(TrackedProcess.OutboundBytes)
+            && trafficColumn.GetCellContent(exitedSender) is System.Windows.Controls.TextBlock { Text: "1.5 KB" }
+            && monitoredProcesses.Single(x => x.Process.StartTimeUtcTicks == reusedChild.StartTimeUtcTicks).OutboundTrafficText == "0 B",
+            "bound outbound column shows readable independent totals for exited and reused PID rows");
+        monitoredProcessView.SortDescriptions.Clear();
+        monitoredProcessView.SortDescriptions.Add(new SortDescription(nameof(TrackedProcess.OutboundBytes), ListSortDirection.Descending));
+        Check(monitoredProcessView.Cast<TrackedProcess>().First() == exitedSender,
+            "outbound column sorts by numeric bytes rather than formatted text");
+        ApplyProcessSnapshot([new(rootProcess, true, false), new(idleChild, false, false) { OutboundBytes = 1536 },
+            new(newChild, false, true) { OutboundBytes = 2048 }, new(reusedChild, false, true)]);
+        Check(monitoredProcessView.Cast<TrackedProcess>().First().Process.Id == newChild.Id
+            && MonitoredProcessGrid.SelectedItem is TrackedProcess { Process.StartTimeUtcTicks: var senderStarted } && senderStarted == idleChild.StartTimeUtcTicks
+            && DetailText.Text.Contains("1.5 KB") && DetailText.Text.Contains("1,536"),
+            "live traffic updates reorder the roster while preserving selected identity and exact byte evidence");
+        monitoredProcessView.SortDescriptions.Clear();
         ClearMonitoredProcesses();
         Check(MonitoredProcessGrid.Items.Count == 0 && MonitoredProcessTab.Header.ToString()!.Contains("0"),
             "restarting monitoring clears the previous process roster");

@@ -170,6 +170,47 @@ try
     Check(single.GetSnapshot()!.Processes.Count == 1 && single.GetSnapshot()!.Processes[0].IsRoot,
         "root-only monitoring roster excludes descendants");
 
+    var trafficTracker = new ProcessTracker(root, true);
+    trafficTracker.Start(new(11, 10, "sender.exe", "", 120));
+    var beforeTraffic = trafficTracker.GetSnapshot()!;
+    trafficTracker.RecordNetworkSend(11, 1024, "8.8.8.8");
+    trafficTracker.RecordNetworkSend(11, 512, "2606:4700:4700::1111");
+    var trafficSnapshot = trafficTracker.GetSnapshot(beforeTraffic.Revision)!;
+    Check(trafficSnapshot.Processes.Single(x => x.Process.Id == 11).OutboundBytes == 1536
+        && trafficSnapshot.Processes.Single(x => x.IsRoot).OutboundBytes == 0
+        && beforeTraffic.Processes.All(x => x.OutboundBytes == 0),
+        "IPv4 and IPv6 outbound bytes update only the sending process and preserve prior snapshots");
+    foreach (string address in new[] { "127.0.0.1", "::1", "::ffff:127.0.0.1", "192.168.1.10", "10.0.0.1", "172.16.0.1", "fd00::1", "fe80::1", "224.0.0.1", "ff02::1", "100.64.0.1", "invalid", "" })
+        trafficTracker.RecordNetworkSend(11, 4096, address);
+    trafficTracker.RecordNetworkSend(11, 0, "8.8.8.8");
+    trafficTracker.RecordNetworkSend(11, -1, "8.8.8.8");
+    trafficTracker.RecordNetworkSend(999, 4096, "8.8.8.8");
+    Check(trafficTracker.GetSnapshot(trafficSnapshot.Revision) is null,
+        "local, private, multicast, invalid and nonpositive sends or untracked PIDs do not count as Internet egress");
+    trafficTracker.Stop(11);
+    trafficTracker.RecordNetworkSend(11, 1024, "8.8.8.8");
+    Check(trafficTracker.GetSnapshot()!.Processes.Single(x => x.Process.Id == 11) is { IsRunning: false, OutboundBytes: 1536 },
+        "exited processes retain their final outbound total and reject later sends");
+    trafficTracker.Start(new(11, 10, "reused-sender.exe", "", 200));
+    trafficTracker.RecordNetworkSend(11, 256, "::ffff:8.8.8.8");
+    var trafficRows = trafficTracker.GetSnapshot()!.Processes;
+    Check(trafficRows.Single(x => x.Process.StartTimeUtcTicks == 120).OutboundBytes == 1536
+        && trafficRows.Single(x => x.Process.StartTimeUtcTicks == 200).OutboundBytes == 256,
+        "PID reuse starts independent outbound accounting including mapped public IPv4 addresses");
+    var trafficRoundTrip = Protocol.Deserialize<WireMessage>(Protocol.Serialize(new WireMessage("statistics", Processes: trafficRows)));
+    Check(trafficRoundTrip!.Processes!.Single(x => x.Process.StartTimeUtcTicks == 120).OutboundBytes == 1536,
+        "outbound byte totals survive process snapshot transport and journal serialization");
+    var legacyRow = Protocol.Deserialize<TrackedProcess>("{\"Process\":{\"Id\":10,\"ParentId\":1,\"Name\":\"old.exe\",\"Path\":\"\",\"StartTimeUtcTicks\":100},\"IsRoot\":true,\"IsRunning\":true}");
+    Check(legacyRow!.OutboundBytes == 0 && legacyRow.OutboundTrafficText == "0 B",
+        "old process snapshots without traffic remain readable");
+    Check(trafficRows.Single(x => x.Process.StartTimeUtcTicks == 120).OutboundTrafficText == "1.5 KB"
+        && ByteSize.Format(1024 * 1024) == "1 MB" && ByteSize.Format(1024L * 1024 * 1024 * 1024) == "1 TB",
+        "outbound traffic uses readable byte units");
+    trafficTracker.RecordNetworkSend(11, long.MaxValue, "8.8.8.8");
+    trafficTracker.RecordNetworkSend(11, 1, "8.8.8.8");
+    Check(trafficTracker.GetSnapshot()!.Processes.Single(x => x.Process.StartTimeUtcTicks == 200).OutboundBytes == long.MaxValue,
+        "very large cumulative outbound totals saturate instead of wrapping negative");
+
     var launcher = new ProcessInfo(20, 1, "explorer.exe", @"C:\Windows\explorer.exe", 10);
     var application = new ProcessInfo(21, 20, "app.exe", @"C:\Apps\app.exe", 20);
     var helper = new ProcessInfo(22, 21, "helper.exe", @"C:\OtherRuntime\helper.exe", 30);

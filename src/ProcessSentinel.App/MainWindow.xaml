@@ -116,6 +116,9 @@
                     <DataGridTextColumn Header="PID" Binding="{Binding Process.Id}" Width="75"/>
                     <DataGridTextColumn Header="父 PID" Binding="{Binding Process.ParentId}" Width="80"/>
                     <DataGridTextColumn Header="状态" Binding="{Binding StateText}" Width="80"/>
+                    <DataGridTextColumn Header="出网流量" Binding="{Binding OutboundTrafficText}" SortMemberPath="OutboundBytes" Width="100">
+                      <DataGridTextColumn.HeaderStyle><Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="Padding" Value="10,7"/><Setter Property="ToolTip" Value="自开始监控累计发送到公网的 TCP/UDP 字节，仅统计本进程；不含接收、本机和局域网通信。"/></Style></DataGridTextColumn.HeaderStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="启动时间" Binding="{Binding Process.StartTimeText}" SortMemberPath="Process.StartTimeUtcTicks" Width="158"/>
                     <DataGridTextColumn Header="程序路径" Binding="{Binding PathText}" Width="*" MinWidth="150" ElementStyle="{StaticResource GridText}"/>
                   </DataGrid.Columns>

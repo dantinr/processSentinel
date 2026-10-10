@@ -143,3 +143,15 @@ Each session now retains Attention/High events in an independent collection and 
 - VERSION remains 0.1.4. Output is `artifacts/dev-alternate/ProcessSentinel-win-x64/`, preserving the user's running default development app and current monitoring. No formal release package was generated. Existing old-version sessions are not retroactively updated; their original logs remain intact.
 
 Evidence: `artifacts/review-build-results.txt`, `artifacts/review-pipe-probe-results.txt` and `artifacts/review-preview.png`. Review memory usage grows with retained risk records until the session is removed. These checks validate UI retention, pipe delivery and persistence; no new elevated ETW capture was requested.
+
+## Per-process outbound traffic
+
+The monitored-process grid now shows cumulative Internet send bytes for each process, with readable units, numeric sorting and exact bytes in its details. The collector counts TCP/UDP sends before either event queue, excluding local/private/special destinations using the existing address classifier. Totals travel in process snapshots and are retained in both journals' roster metadata. Each PID/start-time identity has its own total; parent rows do not include descendants. Snapshots update approximately once per second and on normal stop. The top traffic card retains its existing all-network send/receive scope.
+
+- Daily build and fixed development publish: zero warnings/errors; **71 core checks** and **34 bound WPF checks** passed.
+- Eight new core checks cover IPv4/IPv6 and mapped public destinations, excluded local/private/multicast/invalid destinations, nonpositive bytes and untracked PIDs, immutable snapshots, separate parent/child accounting, exit retention, PID reuse, serialized/legacy snapshots, byte units and overflow saturation.
+- Three new WPF checks verify the actual rendered traffic cell and independent reused-PID values, numeric sorting, and live roster updates with preserved selection and exact detail bytes.
+- The final 1440 × 960 process preview was rendered and visually inspected. The new column, sample totals, remaining columns and selected-process details are visible.
+- VERSION remains 0.1.4. Output is `artifacts/dev/ProcessSentinel-win-x64/`; the user's running alternate app and monitoring session were preserved. No version directory or formal package was generated.
+
+Evidence: `artifacts/outbound-traffic-build-results.txt`, `artifacts/ui-regression-results.txt` and `artifacts/outbound-traffic-preview.png`. Checks validate accounting, protocol and UI without a new elevated ETW integration run. ETW loss can undercount; local proxies/VPNs or independent services forwarding traffic cannot automatically be attributed to the originating program. Old collectors and logs do not retrospectively provide the new counter; restart monitoring with the updated program.

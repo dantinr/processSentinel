@@ -91,6 +91,6 @@ public partial class MainWindow
             return;
         }
         var process = value.Process;
-        DetailText.Text = $"{process.Label}\n角色：{value.RoleText}   父 PID：{process.ParentId}   {(!preview && client?.Running == false ? "最后状态" : "状态")}：{value.StateText}\n启动时间：{process.StartTimeText}\n程序路径：{value.PathText}";
+        DetailText.Text = $"{process.Label}\n角色：{value.RoleText}   父 PID：{process.ParentId}   {(!preview && client?.Running == false ? "最后状态" : "状态")}：{value.StateText}\n出网流量：{value.OutboundTrafficText}（{value.OutboundBytes:N0} 字节）\n仅本进程自监控开始发送到公网的累计字节；不含接收、本机及局域网通信。\n启动时间：{process.StartTimeText}\n程序路径：{value.PathText}";
     }
 }

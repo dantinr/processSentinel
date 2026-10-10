@@ -341,14 +341,7 @@ public partial class MainWindow : Window
             Close();
         }
     }
-    private static string FormatBytes(long bytes)
-    {
-        string[] units = ["B", "KB", "MB", "GB"];
-        double value = bytes;
-        int i = 0;
-        while (value >= 1024 && i < units.Length - 1) { value /= 1024; i++; }
-        return $"{value:0.#} {units[i]}";
-    }
+    private static string FormatBytes(long bytes) => ByteSize.Format(bytes);
     public void SetPreviewData()
     {
         preview = true;
@@ -375,7 +368,7 @@ public partial class MainWindow : Window
         TargetPath.Text = @"D:\Apps\Sample\sample-app.exe";
         RunBadge.Text = "●  示例数据预览";
         TotalText.Text = "1,284"; TrafficText.Text = "2.4 MB"; TrafficDetail.Text = "↑ 420 KB   ↓ 2 MB"; FileText.Text = "926 / 184"; AlertText.Text = "3"; ProcessStat.Text = "3 个存活目标进程";
-        ApplyProcessSnapshot([new(list[0], true, true, IsAncestor: true), new(previewParent, false, true, IsAncestor: true), new(list[1], false, true, IsSelected: true)]);
+        ApplyProcessSnapshot([new(list[0], true, true, IsAncestor: true) { OutboundBytes = 420 * 1024 }, new(previewParent, false, true, IsAncestor: true), new(list[1], false, true, IsSelected: true) { OutboundBytes = 1536 }]);
         var samples = new[] {
             new Activity { Kind = ActivityKind.File, Operation = "读取", Target = @"C:\Users\demo\AppData\Local\Google\Chrome\User Data\Default\Login Data", Detail = "请求读取 4,096 字节；未确认完成状态。" },
             new Activity { Kind = ActivityKind.Network, Operation = "连接", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 只记录端点，不读取通信内容。" },
