@@ -155,3 +155,13 @@ The monitored-process grid now shows cumulative Internet send bytes for each pro
 - VERSION remains 0.1.4. Output is `artifacts/dev/ProcessSentinel-win-x64/`; the user's running alternate app and monitoring session were preserved. No version directory or formal package was generated.
 
 Evidence: `artifacts/outbound-traffic-build-results.txt`, `artifacts/ui-regression-results.txt` and `artifacts/outbound-traffic-preview.png`. Checks validate accounting, protocol and UI without a new elevated ETW integration run. ETW loss can undercount; local proxies/VPNs or independent services forwarding traffic cannot automatically be attributed to the originating program. Old collectors and logs do not retrospectively provide the new counter; restart monitoring with the updated program.
+
+## Network-event outbound traffic
+
+The activity grid now includes an outbound-traffic column derived from each event's existing kind, operation, destination and byte fields. It uses the same address classification as the per-process counter and sorts by numeric byte count. Public sends display their event bytes; receive/connect and local/private events display 0 B; non-network rows display an em dash. Network evidence shows exact outbound bytes. Derived fields are excluded from JSON, preserving the original event format and export behavior. This is a per-event value; cumulative totals remain in the monitored-process grid.
+
+- Build: zero warnings/errors; existing **71 core checks** and **34 WPF checks** passed, including sorted/filtered live event delivery and retention.
+- Both the all-activity and network-filter previews were rendered and visually inspected. The network view shows a 0 B connection and 1.4 KB public send, with 1,460 exact bytes in the selected event details. Preview-only routing was then built/published and exercised through `--render-preview … --network`; no new elevated collector run was performed.
+- VERSION remains 0.1.4. Fixed output: `artifacts/dev-alternate/ProcessSentinel-win-x64/`, preserving the running default app and its monitoring. No version directory or package was generated.
+
+Evidence: `artifacts/network-event-traffic-build-results.txt`, `artifacts/network-event-traffic-publish-results.txt`, `artifacts/network-event-traffic-preview.png` and `artifacts/network-event-traffic-filtered-preview.png`.

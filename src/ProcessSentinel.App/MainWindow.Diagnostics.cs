@@ -7,6 +7,13 @@ namespace ProcessSentinel.App;
 
 public partial class MainWindow
 {
+    internal void ShowNetworkPreview()
+    {
+        MonitorTabs.SelectedIndex = 0;
+        KindFilter.SelectedIndex = 2;
+        EventGrid.SelectedItem = activities.LastOrDefault(x => x.Kind == ActivityKind.Network && x.Operation == "发送");
+    }
+
     internal void ShowProcessPreview()
     {
         MonitorTabs.SelectedIndex = 1;

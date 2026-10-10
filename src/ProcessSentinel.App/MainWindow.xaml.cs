@@ -257,7 +257,9 @@ public partial class MainWindow : Window
     private void ShowActivityEvidence(Activity value)
     {
         DetailTitle.Text = $"{value.KindText} / {value.Operation} · {value.RiskText}{(string.IsNullOrEmpty(value.RuleId) ? "" : " · " + value.RuleId)}";
-        DetailText.Text = $"{value.Time.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff}   #{value.Sequence}   {value.ProcessText}\n目标：{value.Target}\n{value.Evidence}";
+        string traffic = value.Kind == ActivityKind.Network
+            ? $"本条出网流量：{value.OutboundTrafficText}（{value.OutboundBytes:N0} 字节）\n仅计发送到公网的字节；接收、本机及局域网通信不计入。\n" : "";
+        DetailText.Text = $"{value.Time.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff}   #{value.Sequence}   {value.ProcessText}\n目标：{value.Target}\n{traffic}{value.Evidence}";
     }
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
@@ -371,12 +373,12 @@ public partial class MainWindow : Window
         ApplyProcessSnapshot([new(list[0], true, true, IsAncestor: true) { OutboundBytes = 420 * 1024 }, new(previewParent, false, true, IsAncestor: true), new(list[1], false, true, IsSelected: true) { OutboundBytes = 1536 }]);
         var samples = new[] {
             new Activity { Kind = ActivityKind.File, Operation = "读取", Target = @"C:\Users\demo\AppData\Local\Google\Chrome\User Data\Default\Login Data", Detail = "请求读取 4,096 字节；未确认完成状态。" },
-            new Activity { Kind = ActivityKind.Network, Operation = "连接", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 只记录端点，不读取通信内容。" },
+            new Activity { Kind = ActivityKind.Network, Operation = "连接", RemoteAddress = "203.0.113.20", RemotePort = 443, Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 只记录端点，不读取通信内容。" },
             new Activity { Kind = ActivityKind.File, Operation = "写入", Target = @"D:\Apps\Sample\logs\app.log", Detail = "请求写入 512 字节；未确认完成状态。" },
             new Activity { Kind = ActivityKind.Registry, Operation = "设置值", Target = @"\REGISTRY\USER\S-1-5-21-demo\Software\Microsoft\Windows\CurrentVersion\Run\Sample", Detail = "NTSTATUS：0x00000000" },
             new Activity { Kind = ActivityKind.Process, Operation = "启动", Target = @"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", Detail = "父进程 PID 8420\n命令行：powershell.exe -NoProfile -EncodedCommand [示例]" },
             new Activity { Kind = ActivityKind.Image, Operation = "加载", Target = @"C:\Windows\System32\winhttp.dll", Detail = "模块大小：169,984 字节。" },
-            new Activity { Kind = ActivityKind.Network, Operation = "发送", Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 1,460 字节" },
+            new Activity { Kind = ActivityKind.Network, Operation = "发送", Bytes = 1460, RemoteAddress = "203.0.113.20", RemotePort = 443, Target = "192.168.1.8:52140 → 203.0.113.20:443", Detail = "TCP/IPv4 · 1,460 字节" },
             new Activity { Kind = ActivityKind.File, Operation = "打开/创建", Target = @"D:\Apps\Sample\config.json", Detail = "ETW 请求事件，未确认完成状态。" }
         };
         for (int i = 0; i < samples.Length; i++)

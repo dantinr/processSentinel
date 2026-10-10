@@ -23,6 +23,9 @@ public sealed record Activity
     public RiskLevel Risk { get; init; }
     public string RuleId { get; init; } = "";
     public string Reason { get; init; } = "";
+    [JsonIgnore] public long OutboundBytes => Kind == ActivityKind.Network && Operation == "发送" && !RiskEngine.IsLocalAddress(RemoteAddress)
+        ? Math.Max(0, Bytes) : 0;
+    [JsonIgnore] public string OutboundTrafficText => Kind == ActivityKind.Network ? ByteSize.Format(OutboundBytes) : "—";
     [JsonIgnore] public string TimeText => Time.ToLocalTime().ToString("HH:mm:ss.fff");
     [JsonIgnore] public string KindText => Kind switch { ActivityKind.File => "文件", ActivityKind.Network => "网络", ActivityKind.Registry => "注册表", ActivityKind.Process => "进程", ActivityKind.Image => "模块", _ => "系统" };
     [JsonIgnore] public string RiskText => Risk switch { RiskLevel.High => "高关注", RiskLevel.Attention => "需复核", _ => "记录" };
